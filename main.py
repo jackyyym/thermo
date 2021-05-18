@@ -95,11 +95,8 @@ class MovieNight(commands.Cog, name="Movie Night"):
 				return
 		
 		# write to file
-		curr_guild["submissions"].append({"movie":submission, "user":ctx.author.id})
 		with open('./data.json', 'w') as f:
 			json.dump(data, f, indent=4)
-		await ctx.send("Submission sucessful! Use `submissions` to see a list of submissions.")
-
 
 	# view list of current movie submissions
 	@commands.command(	
@@ -143,6 +140,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		for item in curr_guild["submissions"]:
 
 			# randomly select an unused emoji
+			# TODO: have a case for when the server doesn't have enough emoji
 			while True:
 				emoji = bot.emojis[random.randint(0, len(bot.emojis)-1)]
 				if emoji not in used_emoji:
