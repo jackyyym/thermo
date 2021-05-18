@@ -9,33 +9,33 @@ import os
 # enable basic logging
 logging.basicConfig(level=logging.INFO)
 
-# load config.json, create if doesnt exist
-if os.path.exists('./config.json'):
-	with open('./config.json', 'r') as f:
-		config = json.load(f)
-else:
-	print("THERMO: config.json not found, creating new config file")
-	config = {"prefix": "+"}
-	with open('./config.json', 'w') as f:
-		json.dump(config, f, indent=4)
+# # load config.json, create if doesnt exist
+# if os.path.exists('./config.json'):
+# 	with open('./config.json', 'r') as f:
+# 		config = json.load(f)
+# else:
+# 	print("THERMO: config.json not found, creating new config file")
+# 	config = {"prefix": "+"}
+# 	with open('./config.json', 'w') as f:
+# 		json.dump(config, f, indent=4)
 
-# load data.json, create if doesnt exist
-if os.path.exists('./data.json'):
-	with open('./data.json', 'r') as f:
-		data = json.load(f)
-else:
-	print("THERMO: data.json not found, creating new data file")
-	data = {{"guilds": []}}
-	with open('./data.json', 'w') as f:
-		json.dump(data, f, indent=4)
+# # load data.json, create if doesnt exist
+# if os.path.exists('./data.json'):
+# 	with open('./data.json', 'r') as f:
+# 		data = json.load(f)
+# else:
+# 	print("THERMO: data.json not found, creating new data file")
+# 	data = {{"guilds": []}}
+# 	with open('./data.json', 'w') as f:
+# 		json.dump(data, f, indent=4)
 
 # load client and set prefix from config
-bot = commands.Bot(command_prefix = config['prefix'])
+bot = commands.Bot(command_prefix = '+')
 bot.help_command = commands.MinimalHelpCommand()
 
 @bot.event
 async def on_ready():
-	activity = discord.Activity(type=discord.ActivityType.listening, name=f"{config['prefix']}help")
+	activity = discord.Activity(type=discord.ActivityType.listening, name="+help")
 	await bot.change_presence(activity=activity)
 
 # cog for movie poll commands
@@ -48,55 +48,48 @@ class MovieNight(commands.Cog, name="Movie Night"):
 	)
 	async def submit(self, ctx, *, submission):
 
-		# search data for correct guild
-		curr_guild = findGuild(ctx)
-
-		# if guild not found, return
-		if (curr_guild == None):
-			await ctx.send("Guild not found! Try `newpoll` to create a new poll")
-			return
+		# load guild json
+		data = readData(ctx.guild.id)
 
 		# ensure this is users first submission
 		# TODO: allow them to react to overwrite submission
-		for item in curr_guild["submissions"]:
+		for item in data["submissions"]:
 			if item["user"] == ctx.author.id:
 				await ctx.send("You've already made a submission! Use `unsubmit` to remove it first.")
 				return
 		
 		# add submission to data, write to file
-		curr_guild["submissions"].append({"movie":submission, "user":ctx.author.id})
-		with open('./data.json', 'w') as f:
-			json.dump(data, f, indent=4)
+		data["submissions"].append({"movie":submission, "user":ctx.author.id})
+		writeData(ctx.guild.id, data)
+
 		await ctx.send("Submission sucessful! Use `submissions` to see a list of submissions.")
 
-	# submit choice for movie poll
+	# unsubmit choice for movie poll
 	@commands.command(	
 		help = "Remove your submission from the poll.",
 		brief = "Remove your submission from the poll."
 	)
 	async def unsubmit(self, ctx):
 
-		# search data for correct guild
-		curr_guild = findGuild(ctx)
+		# load guild json
+		data = readData(ctx.guild.id)
 
-		# if guild not found, return
-		if (curr_guild == None):
-			await ctx.send("Guild not found! Try `newpoll` to create a new poll")
+		# return if no submissions yet
+		if len(data["submissions"]) == 0:
+			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
 			return
 
-		# ensure this is users first submission
-		# TODO: allow them to react to overwrite submission
-		for item in curr_guild["submissions"]:
+		# find user's submission
+		for item in data["submissions"]:
 			if item["user"] == ctx.author.id:
-				curr_guild["submissions"].remove(item)
+				data["submissions"].remove(item)
 				await ctx.send("Submission removed! Use `submit` to place a new submission")
 			else:
 				await ctx.send("Submission not found!")
 				return
 		
 		# write to file
-		with open('./data.json', 'w') as f:
-			json.dump(data, f, indent=4)
+		writeData(ctx.guild.id, data)
 
 	# view list of current movie submissions
 	@commands.command(	
@@ -105,16 +98,17 @@ class MovieNight(commands.Cog, name="Movie Night"):
 	)
 	async def submissions(self, ctx):
 
-		# search data for correct guild
-		curr_guild = findGuild(ctx)
-		if (curr_guild == None):
-			await ctx.send("Guild not found!")
+		# load guild json
+		data = readData(ctx.guild.id)
+
+		# return if no submissions yet
+		if len(data["submissions"]) == 0:
+			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
 			return
 
 		# format and send response as blockquote
-		# TODO: actually display username
 		response = "\n>>> "
-		for item in curr_guild["submissions"]:
+		for item in data["submissions"]:
 			user = await bot.fetch_user(item["user"])
 			response += f"{item['movie']} - {user.mention}\n"
 		await ctx.send(response)
@@ -126,18 +120,15 @@ class MovieNight(commands.Cog, name="Movie Night"):
 	)
 	async def createpoll(self, ctx):
 
-		# search data for correct guild
-		curr_guild = findGuild(ctx)
-		if (curr_guild == None):
-			await ctx.send("Guild not found!")
-			return
+		# load guild json
+		data = readData(ctx.guild.id)
 		
 		message = await ctx.send('`generating poll`')
 
 		# generate main body of embed
 		desc = ''
 		used_emoji = []
-		for item in curr_guild["submissions"]:
+		for item in data["submissions"]:
 
 			# randomly select an unused emoji
 			# TODO: have a case for when the server doesn't have enough emoji
@@ -159,7 +150,6 @@ class MovieNight(commands.Cog, name="Movie Night"):
 			description = desc,
 			color = discord.Color.blue()
 		)
-
 		embed.set_footer(text=f"Requested by {ctx.author.name}")
 
 		await message.edit(content='', embed=embed)
@@ -172,18 +162,13 @@ class MovieNight(commands.Cog, name="Movie Night"):
 	)
 	async def newpoll(self, ctx):
 
-		# search data for correct guild
-		curr_guild = findGuild(ctx)
+		# load guild json
+		data = readData(ctx.guild.id)
+		data["submissions"] = []
 
-		# if guild not found, add it to data. otherwise delete submissions
-		if (curr_guild == None):
-			data["guilds"].append({"guildID":ctx.message.guild.id, "submissions":[]})
-		else:
-			curr_guild["submissions"] = []
+		# write to file
+		writeData(ctx.guild.id, data)
 
-		# write to json
-		with open('./data.json', 'w') as f:
-			json.dump(data, f, indent=4)
 		await ctx.send("Ready to recieve submissions for a new poll! Previous submissions have been deleted.")
 
 # MISC COMMANDS
@@ -195,18 +180,18 @@ async def ping(ctx):
 	await ctx.send(f"pong! {round(bot.latency * 1000)}ms")
 
 
-# helper function to find guilds data
-def findGuild(ctx):
+# helper functions to read and write to guild json
+def readData(id):
+	try:
+		with open(f"./data/{id}.json", "r+") as f:
+			data = json.load(f)
+	except IOError:
+		data = {"config": {},"submissions": []}
+	return data
 
-	# search data for correct guild
-	curr_guild = None
-	for item in data['guilds']:
-		if item["guildID"] == ctx.guild.id:
-			curr_guild = item
-			break
-
-	# return current guild data, None if not found
-	return curr_guild
+def writeData(id, data):
+	with open(f"./data/{id}.json", "w") as f:
+		json.dump(data, f, indent=4)
 
 # load cogs
 bot.add_cog(MovieNight(bot))
