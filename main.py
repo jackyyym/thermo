@@ -33,6 +33,11 @@ else:
 bot = commands.Bot(command_prefix = config['prefix'])
 bot.help_command = commands.MinimalHelpCommand()
 
+@bot.event
+async def on_ready():
+	activity = discord.Activity(type=discord.ActivityType.listening, name=f"{config['prefix']}help")
+	await bot.change_presence(activity=activity)
+
 # cog for movie poll commands
 class MovieNight(commands.Cog, name="Movie Night"):
 
