@@ -10,23 +10,23 @@ import os
 logging.basicConfig(level=logging.INFO)
 
 # load config.json, create if doesnt exist
-if os.path.exists('config.json'):
-	with open('config.json', 'r') as f:
+if os.path.exists('./config.json'):
+	with open('./config.json', 'r') as f:
 		config = json.load(f)
 else:
 	print("THERMO: config.json not found, creating new config file")
 	config = {"prefix": "+"}
-	with open('config.json', 'w') as f:
+	with open('./config.json', 'w') as f:
 		json.dump(config, f, indent=4)
 
 # load data.json, create if doesnt exist
-if os.path.exists('data.json'):
-	with open('data.json', 'r') as f:
+if os.path.exists('./data.json'):
+	with open('./data.json', 'r') as f:
 		data = json.load(f)
 else:
 	print("THERMO: data.json not found, creating new data file")
 	data = {{"guilds": []}}
-	with open('data.json', 'w') as f:
+	with open('./data.json', 'w') as f:
 		json.dump(data, f, indent=4)
 
 # load client and set prefix from config
@@ -65,7 +65,38 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		
 		# add submission to data, write to file
 		curr_guild["submissions"].append({"movie":submission, "user":ctx.author.id})
-		with open('data.json', 'w') as f:
+		with open('./data.json', 'w') as f:
+			json.dump(data, f, indent=4)
+		await ctx.send("Submission sucessful! Use `submissions` to see a list of submissions.")
+
+	# submit choice for movie poll
+	@commands.command(	
+		help = "Remove your submission from the poll.",
+		brief = "Remove your submission from the poll."
+	)
+	async def unsubmit(self, ctx):
+
+		# search data for correct guild
+		curr_guild = findGuild(ctx)
+
+		# if guild not found, return
+		if (curr_guild == None):
+			await ctx.send("Guild not found! Try `newpoll` to create a new poll")
+			return
+
+		# ensure this is users first submission
+		# TODO: allow them to react to overwrite submission
+		for item in curr_guild["submissions"]:
+			if item["user"] == ctx.author.id:
+				curr_guild["submissions"].remove(item)
+				await ctx.send("Submission removed! Use `submit` to place a new submission")
+			else:
+				await ctx.send("Submission not found!")
+				return
+		
+		# write to file
+		curr_guild["submissions"].append({"movie":submission, "user":ctx.author.id})
+		with open('./data.json', 'w') as f:
 			json.dump(data, f, indent=4)
 		await ctx.send("Submission sucessful! Use `submissions` to see a list of submissions.")
 
@@ -93,7 +124,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 
 	# creates a poll from submitted movies
 	@commands.command(	
-		help = "Creates a poll from user-submitted movies. Does not delete submissions.",
+		help = "Create a poll from user-submitted movies. Does not delete submissions.",
 		brief = "Create a poll from submitted movies"
 	)
 	async def createpoll(self, ctx):
@@ -153,7 +184,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 			curr_guild["submissions"] = []
 
 		# write to json
-		with open('data.json', 'w') as f:
+		with open('./data.json', 'w') as f:
 			json.dump(data, f, indent=4)
 		await ctx.send("Ready to recieve submissions for a new poll! Previous submissions have been deleted.")
 
@@ -183,5 +214,5 @@ def findGuild(ctx):
 bot.add_cog(MovieNight(bot))
 
 # load and run token from file
-token = open('token', 'r').read()
+token = open('./token', 'r').read()
 bot.run(token)
