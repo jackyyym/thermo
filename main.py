@@ -27,7 +27,6 @@ else:
 	with open('data.json', 'w') as f:
 		json.dump(data, f, indent=4)
 
-
 # load client and set prefix from config
 bot = commands.Bot(command_prefix = config['prefix'])
 
@@ -36,7 +35,9 @@ async def ping(ctx):
 	await ctx.send(f"pong! {round(client.latency * 1000)}ms")
 
 # submit choice for movie poll
-@bot.command()
+@bot.command(	
+	help = "Submit your choice for the movie poll. Recommended format: Movie-Title (Year)",
+	brief = "Submit your choice for the movie poll.")
 async def submit(ctx, *, submission):
 
 	# search data for correct guild
@@ -67,17 +68,45 @@ async def submissions(ctx):
 
 	# search data for correct guild
 	curr_guild = findGuild(ctx)
-
-	# if guild not found, return
 	if (curr_guild == None):
 		await ctx.send("Guild not found!")
 		return
 
 	# format and send response as blockquote
+	# TODO: actually display username
 	response = "\n>>> "
 	for _submission in curr_guild["submissions"]:
 		response += f"{_submission['movie']} - {_submission['user']}\n"
 	await ctx.send(response)
+
+# creates a poll from submitted movies
+@bot.command()
+async def createpoll(ctx):
+
+	# search data for correct guild
+	curr_guild = findGuild(ctx)
+	if (curr_guild == None):
+		await ctx.send("Guild not found!")
+		return
+	
+	desc = ''
+	for item in curr_guild["submissions"]:
+		user = await bot.fetch_user(item["user"])
+		desc += f"▶ : {item['movie']} - {user.mention}\n\n"
+
+	embed = discord.Embed(
+		title = 'Title',
+		description = desc,
+		color = discord.Color.blue()
+	)
+
+	embed.set_footer(text=f"Requested by {ctx.author.name}")
+	embed.set_image(url='https://www.themoviedb.org/t/p/w600_and_h900_bestv2/9XibNLfmUWCg0PPydmyoCl1KxvF.jpg')
+
+
+
+	await ctx.send(embed=embed)
+
 
 # helper function to find guilds data
 def findGuild(ctx):
