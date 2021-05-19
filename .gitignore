@@ -130,5 +130,4 @@ dmypy.json
 
 # Bot files
 token
-config.json
-data.json
+*.json
