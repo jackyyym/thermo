@@ -278,7 +278,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 
 	# toggle manager permissions for a user
 	@commands.command(	
-		help = "Toggle manager permissions for a user. Managers can use polls to create and delete polls.",
+		help = "Toggle manager permissions for a user. Managers can use commands to create and delete polls.",
 		brief = "Toggle manager permissions for a user."
 	)
 	@commands.check(is_manager)
@@ -299,6 +299,11 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 
 		writeData(ctx.guild.id, data)
 
+	@togglemanager.error
+	async def togglemanager_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+togglemanager <member>`")
+
 # MISC COMMANDS
 @bot.command(
 	help = "Displays current latency",
@@ -310,19 +315,19 @@ async def ping(ctx):
 # helper functions to read and write to guild json
 def readData(id):
 	try:
-		with open(f"./data/{id}.json", "r+") as f:
+		with open(f"data/{id}.json", "r+") as f:
 			data = json.load(f)
 	except IOError:
 		data = {"config": {"managers":[]},"submissions": []}
 	return data
 
 def writeData(id, data):
-	with open(f"./data/{id}.json", "w") as f:
+	with open(f"data/{id}.json", "w") as f:
 		json.dump(data, f, indent=4)
 
 # load cogs
 bot.add_cog(GroupPoll(bot))
 
 # load and run token from file
-token = open('./token', 'r').read()
+token = open('token', 'r').read()
 bot.run(token)
