@@ -15,24 +15,24 @@ Customizable D<span>iscord.py<span> bot created to handle polls with user submis
 <br><br>
 
 # Commands:
-## Group Poll
-*Member Commands:*
-- **submit** \<submission> - *Submit your choice for the current poll.*
-- **unsubmit** - *Remove your submission from the current poll.*
-- **submissions** - *List current poll submissions.*
+### **Group Poll:**
+*Member Commands*
+- `submit <submission>` - *Submit your choice for the current poll.*
+- `unsubmit` - *Remove your submission from the current poll.*
+- `submissions` - *List current poll submissions.*
 
-*Manager Commands:*
-- **createpoll** - *Generate a poll from user submissions.*
-- **newpoll** \<pollname> - *Clear current submissions to begin a new poll.*
-- **renamepoll** \<pollname> - *Rename the current poll.*
-- **setrole** \<rolename> - *Set the poll member role.*
-- **unsetrole** - *Unsets poll member role.*
-- **togglemanager** \<member> - *Toggle manager permissions for a user.*
+*Manager Commands*
+- `createpoll` - *Generate a poll from user submissions.*
+- `newpoll <pollname>` - *Clear current submissions to begin a new poll.*
+- `renamepoll <pollname>` - *Rename the current poll.*
+- `setrole <rolename>` - *Set the poll member role.*
+- `unsetrole` - *Unsets poll member role.*
+- `togglemanager <member>` - *Toggle manager permissions for a user.*
 
-## Misc:
-- **ping** - *Display current ping.*
-- **help** - *Display list of commands.*
-- **help** \<command> - *Get info about a particular command.*
+### **Misc:**
+- `ping` - *Display current ping.*
+- `help` - *Display list of commands.*
+- `help <command>` - *Get info about a particular command.*
 <br><br>
 
 # JSON Data Structure:
