@@ -135,7 +135,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 
 		# return if no submissions yet
 		if len(data["submissions"]) == 0:
-			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
+			await ctx.send("No submissions yet! Use `submit` to place a submission.")
 			return
 
 		# format and send response as blockquote
