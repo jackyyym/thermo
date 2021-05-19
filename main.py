@@ -3,35 +3,13 @@ from discord.ext import commands
 import logging
 import random
 import json
-import os
-
 
 # enable basic logging
 logging.basicConfig(level=logging.INFO)
 
-# # load config.json, create if doesnt exist
-# if os.path.exists('./config.json'):
-# 	with open('./config.json', 'r') as f:
-# 		config = json.load(f)
-# else:
-# 	print("THERMO: config.json not found, creating new config file")
-# 	config = {"prefix": "+"}
-# 	with open('./config.json', 'w') as f:
-# 		json.dump(config, f, indent=4)
-
-# # load data.json, create if doesnt exist
-# if os.path.exists('./data.json'):
-# 	with open('./data.json', 'r') as f:
-# 		data = json.load(f)
-# else:
-# 	print("THERMO: data.json not found, creating new data file")
-# 	data = {{"guilds": []}}
-# 	with open('./data.json', 'w') as f:
-# 		json.dump(data, f, indent=4)
-
 # load client and set prefix from config
 bot = commands.Bot(command_prefix = '+')
-bot.help_command = commands.MinimalHelpCommand()
+bot.help_command = commands.MinimalHelpCommand(no_category="Misc", verify_checks=False)
 
 @bot.event
 async def on_ready():
@@ -42,6 +20,7 @@ async def on_ready():
 class MovieNight(commands.Cog, name="Movie Night"):
 
 	# check if user is a movie night manager or admin
+	# TODO: move output to dedicated check error function
 	async def is_manager(ctx):
 
 		data = readData(ctx.guild.id)
@@ -52,13 +31,13 @@ class MovieNight(commands.Cog, name="Movie Night"):
 			return True
 
 	# check if user has member role
-	async def is_member(ctx):
-		
+	async def is_movienight(ctx):
+
 		data = readData(ctx.guild.id)
 
 		# check if movie role is set
 		if "movierole" not in data["config"]:
-			await ctx.send("There is no movie night role! create one with `!setrole <role name>`")
+			await ctx.send("There is no movie night role! create one with `+setrole <role name>`")
 			return False
 		role = ctx.guild.get_role(data["config"]["movierole"])
 
@@ -68,14 +47,13 @@ class MovieNight(commands.Cog, name="Movie Night"):
 			return False
 		else:
 			return True
-		
-			
+
 	# submit choice for movie poll
-	@commands.command(	
+	@commands.command(
 		help = "Submit your choice for the movie poll. Recommended format: Movie-Title (Year)",
 		brief = "Submit your choice for the movie poll."
 	)
-	@commands.check(is_member)
+	@commands.check(is_movienight)
 	async def submit(self, ctx, *, submission):
 
 		# load guild json
@@ -99,7 +77,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		help = "Remove your submission from the poll.",
 		brief = "Remove your submission from the poll."
 	)
-	@commands.check(is_member)
+	@commands.check(is_movienight)
 	async def unsubmit(self, ctx):
 
 		# load guild json
@@ -127,7 +105,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		help = "Display a list of all current movie submissions. Does not create a poll.",
 		brief = "List current movie submissions"
 	)
-	@commands.check(is_member)
+	@commands.check(is_movienight)
 	async def submissions(self, ctx):
 
 		# load guild json
@@ -146,7 +124,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		await ctx.send(response)
 
 	# creates a poll from submitted movies
-	@commands.command(	
+	@commands.command(
 		help = "Create a poll from user-submitted movies. Does not delete submissions.",
 		brief = "Create a poll from submitted movies"
 	)
@@ -188,7 +166,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		await message.edit(content='', embed=embed)
 
 	# deletes previous submissions to start new poll
-	@commands.command(	
+	@commands.command(
 		help = "Clear current submissions to begin a new poll. WARNING: deleted submissions are non-recoverable.",
 		brief = "Clear current submissions to begin a new poll"
 	)
@@ -209,6 +187,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		help = "Set the movie night member role. Creates the role if it does not already exist.",
 		brief = "Set the movie night member role."
 	)
+	@commands.check(is_manager)
 	async def setrole(self, ctx, *, rolename):
 
 		# load guild json
