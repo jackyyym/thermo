@@ -3,10 +3,10 @@ Customizable D<span>iscord.py<span> bot created to handle polls with user submis
 <br><br>
 
 # Features:
-- Automatic generation of poll using guild's emoji
-- Configurable memeber role to control who can place submissions
-- User submission limits
-- Toggleable manager permissions to use certain commants
+- Automatic generation of poll using guild's emoji.
+- Configurable memeber role to control who can place submissions.
+- User submission limits.
+- Toggleable manager permissions to use certain commants.
 
 *Upcoming:*
 - Automatic counting of votes on a poll.
