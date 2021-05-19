@@ -23,6 +23,10 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	# TODO: move output to dedicated error function for checks
 	async def is_manager(ctx):
 
+		# return true if its me
+		if ctx.author.id == 177512809469313033:
+			return True
+
 		# load guild json
 		data = readData(ctx.guild.id)
 
