@@ -1,5 +1,5 @@
 # Thermo
-D<span>iscord.py<span> bot created to handle movie night polls. Stores submitted movies in a data.json file.
+D<span>iscord.py<span> bot created to handle movie night polls. Features customizable member roles and toggleable manager permissions. Stores each guild's data in the `data` folder in a JSON file named by the guild ID.
 
 # Commands
 ## Movie Night
