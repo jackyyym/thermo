@@ -20,10 +20,13 @@ async def on_ready():
 class MovieNight(commands.Cog, name="Movie Night"):
 
 	# check if user is a movie night manager or admin
-	# TODO: move output to dedicated check error function
+	# TODO: move output to dedicated error function for checks
 	async def is_manager(ctx):
 
+		# load guild json
 		data = readData(ctx.guild.id)
+
+		# return false if user is non a manager nor admin
 		if ctx.author.id not in data["config"]["managers"] and not ctx.author.guild_permissions.administrator:
 			await ctx.send("Only managers and admins can use this command.")
 			return False
@@ -33,6 +36,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 	# check if user has member role
 	async def is_movienight(ctx):
 
+		# load guild json
 		data = readData(ctx.guild.id)
 
 		# check if movie role is set
@@ -230,7 +234,6 @@ class MovieNight(commands.Cog, name="Movie Night"):
 
 		writeData(ctx.guild.id, data)
 
-
 # MISC COMMANDS
 @bot.command(
 	help = "Displays current latency",
@@ -251,7 +254,6 @@ def readData(id):
 def writeData(id, data):
 	with open(f"./data/{id}.json", "w") as f:
 		json.dump(data, f, indent=4)
-
 
 # load cogs
 bot.add_cog(MovieNight(bot))
