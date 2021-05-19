@@ -203,7 +203,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		# write to file
 		writeData(ctx.guild.id, data)
 
-		await ctx.send(f"Ready to recieve submissions for a the poll `{pollname}`! Previous submissions have been deleted.")
+		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! Previous submissions have been deleted.")
 	
 	@newpoll.error
 	async def newpoll_error(self, ctx, error):
@@ -220,7 +220,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		data = readData(ctx.guild.id)
 		data["pollname"] = pollname
 		writeData(ctx.guild.id, data)
-		await ctx.send(f"Ready to recieve submissions for a the poll `{pollname}`! Previous submissions have been deleted.")
+		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! Previous submissions have been deleted.")
 	
 	@renamepoll.error
 	async def renamepoll_error(self, ctx, error):
@@ -259,6 +259,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			await ctx.send("Usage: `+setrole <role name>`")
 
 	# unsets the poll member role
+	# TODO: make it delete the role?
 	@commands.command(
 		help = "Unsets the poll member role if one is designated. This allows anyone to submit to polls.",
 		brief = "Unset the poll member role."
