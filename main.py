@@ -134,7 +134,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		response = f"\n>>> *{data['pollname']}*\n"
 		for item in data["submissions"]:
 			user = await bot.fetch_user(item["user"])
-			response += f"{item['submission']} - {user.mention}\n"
+			response += f"{item['submission']} - {user.name}\n"
 		await ctx.send(response)
 
 	# creates a poll from user submissions
@@ -252,6 +252,11 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		writeData(ctx.guild.id, data)
 
 		await ctx.send(f"`{role.name}` is now the poll member role!")
+
+	@setrole.error
+	async def setrole_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+setrole <role name>`")
 
 	# unsets the poll member role
 	@commands.command(
