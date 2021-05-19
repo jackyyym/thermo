@@ -16,10 +16,10 @@ async def on_ready():
 	activity = discord.Activity(type=discord.ActivityType.listening, name="+help")
 	await bot.change_presence(activity=activity)
 
-# cog for movie poll commands
-class MovieNight(commands.Cog, name="Movie Night"):
+# cog for poll commands
+class GroupPoll(commands.Cog, name="Group Poll"):
 
-	# check if user is a movie night manager or admin
+	# check if user is a poll manager or admin
 	# TODO: move output to dedicated error function for checks
 	async def is_manager(ctx):
 
@@ -34,16 +34,15 @@ class MovieNight(commands.Cog, name="Movie Night"):
 			return True
 
 	# check if user has member role
-	async def is_movienight(ctx):
+	async def is_member(ctx):
 
 		# load guild json
 		data = readData(ctx.guild.id)
 
-		# check if movie role is set
-		if "movierole" not in data["config"]:
-			await ctx.send("There is no movie night role! create one with `+setrole <role name>`")
-			return False
-		role = ctx.guild.get_role(data["config"]["movierole"])
+		# check if member role is set
+		if "memberrole" not in data["config"]:
+			return True
+		role = ctx.guild.get_role(data["config"]["memberrole"])
 
 		# check if user has the role
 		if role not in ctx.author.roles:
@@ -52,12 +51,12 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		else:
 			return True
 
-	# submit choice for movie poll
+	# submit choice for poll
 	@commands.command(
-		help = "Submit your choice for the movie poll. Recommended format: Movie-Title (Year)",
-		brief = "Submit your choice for the movie poll."
+		help = "Submit your choice for the current poll.",
+		brief = "Submit your choice for the current poll."
 	)
-	@commands.check(is_movienight)
+	@commands.check(is_member)
 	async def submit(self, ctx, *, submission):
 
 		# load guild json
@@ -71,17 +70,22 @@ class MovieNight(commands.Cog, name="Movie Night"):
 				return
 		
 		# add submission to data, write to file
-		data["submissions"].append({"movie":submission, "user":ctx.author.id})
+		data["submissions"].append({"submission":submission, "user":ctx.author.id})
 		writeData(ctx.guild.id, data)
 
-		await ctx.send("Submission sucessful! Use `submissions` to see a list of submissions.")
+		await ctx.send(f"Submitted to poll `{data['pollname']}`! Use `submissions` to see a list of submissions.")
 
-	# unsubmit choice for movie poll
+	@submit.error
+	async def submit_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+submit <submission>`")
+
+	# unsubmit choice for current poll
 	@commands.command(	
-		help = "Remove your submission from the poll.",
-		brief = "Remove your submission from the poll."
+		help = "Remove your submission from the current poll.",
+		brief = "Remove your submission from the current poll."
 	)
-	@commands.check(is_movienight)
+	@commands.check(is_member)
 	async def unsubmit(self, ctx):
 
 		# load guild json
@@ -96,7 +100,7 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		for item in data["submissions"]:
 			if item["user"] == ctx.author.id:
 				data["submissions"].remove(item)
-				await ctx.send("Submission removed! Use `submit` to place a new submission")
+				await ctx.send(f"Submission removed from `{data['pollname']}`! Use `submit` to place a new submission")
 			else:
 				await ctx.send("Submission not found!")
 				return
@@ -104,12 +108,14 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		# write to file
 		writeData(ctx.guild.id, data)
 
-	# view list of current movie submissions
+	# view list of current poll submissions
+	# TODO: configure user submission limit
+	# TODO: managers can ignore submission limit
 	@commands.command(
-		help = "Display a list of all current movie submissions. Does not create a poll.",
-		brief = "List current movie submissions"
+		help = "Display a list of all current poll submissions. Does not create a poll.",
+		brief = "List current poll submissions."
 	)
-	@commands.check(is_movienight)
+	@commands.check(is_member)
 	async def submissions(self, ctx):
 
 		# load guild json
@@ -121,16 +127,16 @@ class MovieNight(commands.Cog, name="Movie Night"):
 			return
 
 		# format and send response as blockquote
-		response = "\n>>> "
+		response = f"\n>>> *{data['pollname']}*\n"
 		for item in data["submissions"]:
 			user = await bot.fetch_user(item["user"])
-			response += f"{item['movie']} - {user.mention}\n"
+			response += f"{item['submission']} - {user.mention}\n"
 		await ctx.send(response)
 
-	# creates a poll from submitted movies
+	# creates a poll from user submissions
 	@commands.command(
-		help = "Create a poll from user-submitted movies. Does not delete submissions.",
-		brief = "Create a poll from submitted movies"
+		help = "Create a poll from user submissions. Does not delete submissions.",
+		brief = "Create a poll from user submissions."
 	)
 	@commands.check(is_manager)
 	async def createpoll(self, ctx):
@@ -139,6 +145,12 @@ class MovieNight(commands.Cog, name="Movie Night"):
 		data = readData(ctx.guild.id)
 		
 		message = await ctx.send('`generating poll`')
+
+		# load title from data, generic if none
+		try:
+			pollname = f"{data['pollname']}:"
+		except:
+			pollname = "Poll:"
 
 		# generate main body of embed
 		desc = ''
@@ -155,13 +167,13 @@ class MovieNight(commands.Cog, name="Movie Night"):
 
 			# add line to embed description
 			user = await bot.fetch_user(item["user"])
-			desc += f"{emoji} : **{item['movie']}** - {user.mention}\n\n"
+			desc += f"{emoji} : **{item['submission']}** - {user.mention}\n\n"
 
 			# add matching reaction
 			await message.add_reaction(emoji)
 
 		embed = discord.Embed(
-			title = 'Movie Night Poll!',
+			title = pollname,
 			description = desc,
 			color = discord.Color.blue()
 		)
@@ -169,27 +181,53 @@ class MovieNight(commands.Cog, name="Movie Night"):
 
 		await message.edit(content='', embed=embed)
 
-	# deletes previous submissions to start new poll
+	# start new poll, giving a new title
 	@commands.command(
-		help = "Clear current submissions to begin a new poll. WARNING: deleted submissions are non-recoverable.",
-		brief = "Clear current submissions to begin a new poll"
+		help = "Clear current submissions to begin a new poll. Provide the title of the poll. WARNING: deleted submissions are non-recoverable.",
+		brief = "Clear current submissions to begin a new poll."
 	)
 	@commands.check(is_manager)
-	async def newpoll(self, ctx):
+	async def newpoll(self, ctx, *, pollname):
 
 		# load guild json
 		data = readData(ctx.guild.id)
+
+		# set title and clear submissions
+		data["pollname"] = pollname
 		data["submissions"] = []
 
 		# write to file
 		writeData(ctx.guild.id, data)
 
-		await ctx.send("Ready to recieve submissions for a new poll! Previous submissions have been deleted.")
+		await ctx.send(f"Ready to recieve submissions for a the poll `{pollname}`! Previous submissions have been deleted.")
 	
-	# set the movie night member role, creates it if it doesnt exist
+	@newpoll.error
+	async def newpoll_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+newpoll <poll name>`")
+
+	# renames current poll
 	@commands.command(
-		help = "Set the movie night member role. Creates the role if it does not already exist.",
-		brief = "Set the movie night member role."
+		help = "Rename the current poll.",
+		brief = "Rename the current poll."
+	)
+	@commands.check(is_manager)
+	async def renamepoll(self, ctx, *, pollname):
+		data = readData(ctx.guild.id)
+		data["pollname"] = pollname
+		writeData(ctx.guild.id, data)
+		await ctx.send(f"Ready to recieve submissions for a the poll `{pollname}`! Previous submissions have been deleted.")
+	
+	@renamepoll.error
+	async def renamepoll_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+renamepoll <poll name>`")
+
+	# set the poll member role, creates it if it doesnt exist
+	@commands.command(
+		help = "Designamtes a poll member role. Creates the role if it does not already exist. If a poll "+
+				"member role exists, only those with the role can submit to polls",
+		brief = "Set the poll member role."
 	)
 	@commands.check(is_manager)
 	async def setrole(self, ctx, *, rolename):
@@ -206,14 +244,41 @@ class MovieNight(commands.Cog, name="Movie Night"):
 				await ctx.send("I don't have the `Manage Roles` permission!")
 				return
 
-		data["config"]["movierole"] = role.id
+		data["config"]["memberrole"] = role.id
 		writeData(ctx.guild.id, data)
 
-		await ctx.send(f"`{role.name}` is now the movie night role!")
+		await ctx.send(f"`{role.name}` is now the poll member role!")
+
+	# unsets the poll member role
+	@commands.command(
+		help = "Unsets the poll member role if one is designated. This allows anyone to submit to polls.",
+		brief = "Unset the poll member role."
+	)
+	@commands.check(is_manager)
+	async def unsetrole(self, ctx):
+
+		# load guild json
+		data = readData(ctx.guild.id)
+
+		# check if member role is set
+		if "memberrole" not in data["config"]:
+			await ctx.send("Poll member role not set!")
+			return
+
+		# check if member role exists in guild
+		role = discord.utils.get(ctx.guild.roles, id=data["config"]["memberrole"])
+		if role == None:
+			await ctx.send("Could not find the poll member role!")
+			return
+
+		data["config"].pop("memberrole")
+		writeData(ctx.guild.id, data)
+
+		await ctx.send(f"The poll member role has been unset! Anyone can submit to polls now.")
 
 	# toggle manager permissions for a user
 	@commands.command(	
-		help = "Toggle manager permissions for a user.",
+		help = "Toggle manager permissions for a user. Managers can use polls to create and delete polls.",
 		brief = "Toggle manager permissions for a user."
 	)
 	@commands.check(is_manager)
@@ -256,7 +321,7 @@ def writeData(id, data):
 		json.dump(data, f, indent=4)
 
 # load cogs
-bot.add_cog(MovieNight(bot))
+bot.add_cog(GroupPoll(bot))
 
 # load and run token from file
 token = open('./token', 'r').read()
