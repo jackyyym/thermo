@@ -66,6 +66,8 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		# load guild json
 		data = readData(ctx.guild.id)
 
+		submission = sanitizeInput(submission)
+
 		# ensure this is users first submission
 		# TODO: allow them to react to overwrite submission
 		for item in data["submissions"]:
@@ -105,12 +107,12 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			if item["user"] == ctx.author.id:
 				data["submissions"].remove(item)
 				await ctx.send(f"Submission removed from `{data['pollname']}`! Use `submit` to place a new submission")
-			else:
-				await ctx.send("Submission not found!")
+				writeData(ctx.guild.id, data)
 				return
 		
-		# write to file
-		writeData(ctx.guild.id, data)
+		# submission not found
+		await ctx.send("Submission not found!")
+		return
 
 	# view list of current poll submissions
 	# TODO: configure user submission limit
@@ -196,6 +198,8 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		# load guild json
 		data = readData(ctx.guild.id)
 
+		pollname = sanitizeInput(pollname)
+
 		# set title and clear submissions
 		data["pollname"] = pollname
 		data["submissions"] = []
@@ -218,6 +222,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def renamepoll(self, ctx, *, pollname):
 		data = readData(ctx.guild.id)
+		pollname = sanitizeInput(pollname)
 		data["pollname"] = pollname
 		writeData(ctx.guild.id, data)
 		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! Previous submissions have been deleted.")
@@ -238,6 +243,8 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 
 		# load guild json
 		data = readData(ctx.guild.id)
+
+		rolename = sanitizeInput(rolename)
 
 		# lookup and see if role already exists, create if not
 		role = discord.utils.get(ctx.guild.roles, name=rolename)
@@ -334,6 +341,10 @@ def readData(id):
 def writeData(id, data):
 	with open(f"data/{id}.json", "w") as f:
 		json.dump(data, f, indent=4)
+
+def sanitizeInput(input):
+	chunks = input.split('\n')
+	return chunks[0]
 
 # load cogs
 bot.add_cog(GroupPoll(bot))
