@@ -1,0 +1,17 @@
+{
+	"_id": 123412341234,
+	"guild": 123412341234,
+	"name": "this is a poll",
+	"submisssions": [
+		{
+			"user": 123412341234,
+			"text": "poll submission 1"
+		},
+		{
+			"user": 123412341234,
+			"text": "poll submission 2"
+		}
+	],
+	"posted": false,
+	"message": null
+}

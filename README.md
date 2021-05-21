@@ -1,5 +1,5 @@
 # Thermo
-Customizable D<span>iscord.py<span> bot created to handle polls with user submission. Stores each guild's data in the `data` folder in a JSON file named by the guild's ID.
+Customizable Discord bot created to handle polls with user submission. Written in Python, powered by D<span>iscord.py<span> and MongoDB.
 
 [Bot Invite Link](https://discord.com/api/oauth2/authorize?client_id=843879097050726430&permissions=268435456&scope=bot)
 <br><br>
@@ -38,14 +38,3 @@ Customizable D<span>iscord.py<span> bot created to handle polls with user submis
 - `help` - *Display list of commands.*
 - `help <command>` - *Get info about a particular command.*
 <br><br>
-
-# JSON Data Structure:
-`{guild id}.json`:
-- `config` - stores configuration info
-	- `managers[]` - list of current managers stored as array of user IDs 
-	- `memberrole` - current poll member role; anyone can submit to polls if none exists
-- `submissions[]` - array of current submissions, where each element has the structure:
-	- `submission` - name of submission as a string
-	- `user` - user ID of the one who submitted this entry
-- `pollname` - name of current poll as a string
-

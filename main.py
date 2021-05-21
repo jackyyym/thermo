@@ -1,8 +1,10 @@
 import discord
 from discord.ext import commands
+import pymongo
 import logging
 import random
 import json
+import certifi
 
 # enable basic logging
 logging.basicConfig(level=logging.INFO)
@@ -10,6 +12,11 @@ logging.basicConfig(level=logging.INFO)
 # load client and set prefix from config
 bot = commands.Bot(command_prefix = '+')
 bot.help_command = commands.MinimalHelpCommand(no_category="Misc", verify_checks=False)
+
+# load collections
+with open("mongo_url", "r") as mongo_url:
+	cluster = pymongo.MongoClient(mongo_url, tlsCAFile=certifi.where())
+db = cluster["botData"]
 
 @bot.event
 async def on_ready():
@@ -27,11 +34,11 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		if ctx.author.id == 177512809469313033:
 			return True
 
-		# load guild json
-		data = readData(ctx.guild.id)
+		# get guild config
+		config = getConfig(ctx)
 
 		# return false if user is non a manager nor admin
-		if ctx.author.id not in data["config"]["managers"] and not ctx.author.guild_permissions.administrator:
+		if ctx.author.id not in config["managers"] and not ctx.author.guild_permissions.administrator:
 			await ctx.send("Only managers and admins can use this command.")
 			return False
 		else:
@@ -40,13 +47,17 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	# check if user has member role
 	async def is_member(ctx):
 
-		# load guild json
-		data = readData(ctx.guild.id)
-
-		# check if member role is set
-		if "memberrole" not in data["config"]:
+		# return true if its me
+		if ctx.author.id == 177512809469313033:
 			return True
-		role = ctx.guild.get_role(data["config"]["memberrole"])
+
+		# get guild config
+		config = getConfig(ctx)
+		
+		# check if member role is set
+		if config["role"] == None:
+			return True
+		role = ctx.guild.get_role(config["role"])
 
 		# check if user has the role
 		if role not in ctx.author.roles:
@@ -63,23 +74,28 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_member)
 	async def submit(self, ctx, *, submission):
 
-		# load guild json
-		data = readData(ctx.guild.id)
-
-		submission = sanitizeInput(submission)
+		# respond if poll not found
+		if db.polls.count_documents({ "guild": ctx.guild.id }, limit = 1) == 0:
+			await ctx.send("Poll not found!")
+			return
 
 		# ensure this is users first submission
 		# TODO: allow them to react to overwrite submission
-		for item in data["submissions"]:
-			if item["user"] == ctx.author.id:
-				await ctx.send("You've already made a submission! Use `unsubmit` to remove it first.")
-				return
-		
-		# add submission to data, write to file
-		data["submissions"].append({"submission":submission, "user":ctx.author.id})
-		writeData(ctx.guild.id, data)
+		query = { "guild": ctx.guild.id, "submissions.user": ctx.author.id }
+		if db.polls.count_documents(query, limit = 1) > 0:
+			await ctx.send("You've already made a submission! Use `unsubmit` to remove it first.")
+			return
 
-		await ctx.send(f"Submitted to poll `{data['pollname']}`! Use `submissions` to see a list of submissions.")
+		submission = sanitizeInput(submission)
+		
+		# add submission
+		db.polls.update_one(
+			{ "guild": ctx.guild.id },
+			{ "$push": { "submissions": { "user": ctx.author.id, "text": submission } } }
+		)
+
+		poll = db.polls.find_one({ "guild": ctx.guild.id })
+		await ctx.send(f"Submitted to poll `{poll['name']}`! Use `submissions` to see a list of submissions.")
 
 	@submit.error
 	async def submit_error(self, ctx, error):
@@ -94,25 +110,26 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_member)
 	async def unsubmit(self, ctx):
 
-		# load guild json
-		data = readData(ctx.guild.id)
-
-		# return if no submissions yet
-		if len(data["submissions"]) == 0:
-			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
+		# respond if poll not found
+		poll = db.polls.find_one( { "guild": ctx.guild.id } )
+		if poll == None:
+			await ctx.send("Poll not found!")
 			return
 
-		# find user's submission
-		for item in data["submissions"]:
-			if item["user"] == ctx.author.id:
-				data["submissions"].remove(item)
-				await ctx.send(f"Submission removed from `{data['pollname']}`! Use `submit` to place a new submission")
-				writeData(ctx.guild.id, data)
-				return
+		# ensure user has a submission
+		query = { "guild": ctx.guild.id, "submissions.user": ctx.author.id }
+		if db.polls.count_documents(query, limit = 1) == 0:
+			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
+			return
 		
-		# submission not found
-		await ctx.send("Submission not found!")
-		return
+		# remove submission
+		db.polls.update_one(
+			{ "guild": ctx.guild.id },
+			{ "$pull": { "submissions": { "user": ctx.author.id } } }
+		)
+
+		poll = db.polls.find_one( { "guild": ctx.guild.id } )
+		await ctx.send(f"Submission removed from `{poll['name']}`! Use `submit` to place a new submission")
 
 	# view list of current poll submissions
 	# TODO: configure user submission limit
@@ -124,19 +141,21 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_member)
 	async def submissions(self, ctx):
 
-		# load guild json
-		data = readData(ctx.guild.id)
+		# load poll
+		poll = db.polls.find_one({ "guild": ctx.guild.id })
+		if poll == None:
+			await ctx.send("Poll not found!")
+			return
 
-		# return if no submissions yet
-		if len(data["submissions"]) == 0:
+		if len(poll["submissions"]) == 0:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
 			return
 
 		# format and send response as blockquote
-		response = f"\n>>> *{data['pollname']}*\n"
-		for item in data["submissions"]:
+		response = f"\n>>> *{poll['name']}*\n"
+		for item in poll["submissions"]:
 			user = await bot.fetch_user(item["user"])
-			response += f"{item['submission']} - {user.name}\n"
+			response += f"{item['text']} - {user.name}\n"
 		await ctx.send(response)
 
 	# creates a poll from user submissions
@@ -147,39 +166,37 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def createpoll(self, ctx):
 
-		# load guild json
-		data = readData(ctx.guild.id)
+		# load poll
+		poll = db.polls.find_one({ "guild": ctx.guild.id })
+		if poll == None:
+			await ctx.send("Poll not found!")
+			return
 		
 		message = await ctx.send('`generating poll`')
-
-		# load title from data, generic if none
-		try:
-			pollname = f"{data['pollname']}:"
-		except:
-			pollname = "Poll:"
 
 		# generate main body of embed
 		desc = ''
 		used_emoji = []
-		for item in data["submissions"]:
+		for item in poll["submissions"]:
 
 			# randomly select an unused emoji
+			# TODO: use random.sample()
 			# TODO: have a case for when the server doesn't have enough emoji
 			while True:
-				emoji = bot.emojis[random.randint(0, len(bot.emojis)-1)]
+				emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
 				if emoji not in used_emoji:
 					break
 			used_emoji.append(emoji)
 
 			# add line to embed description
 			user = await bot.fetch_user(item["user"])
-			desc += f"{emoji} : **{item['submission']}** - {user.mention}\n\n"
+			desc += f"{emoji} : **{item['text']}** - {user.mention}\n\n"
 
 			# add matching reaction
 			await message.add_reaction(emoji)
 
 		embed = discord.Embed(
-			title = pollname,
+			title = poll['name'],
 			description = desc,
 			color = discord.Color.blue()
 		)
@@ -195,19 +212,15 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def newpoll(self, ctx, *, pollname):
 
-		# load guild json
-		data = readData(ctx.guild.id)
+		# remove previous poll if exists
+		if db.polls.count_documents({ "guild": ctx.guild.id }, limit = 1) > 0:
+			db.polls.delete_one({ "guild": ctx.guild.id })
 
 		pollname = sanitizeInput(pollname)
 
-		# set title and clear submissions
-		data["pollname"] = pollname
-		data["submissions"] = []
-
-		# write to file
-		writeData(ctx.guild.id, data)
-
-		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! Previous submissions have been deleted.")
+		# create new poll
+		db.polls.insert_one({ "guild": ctx.guild.id, "name": pollname, "submissions": [], "posted": False })
+		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! The previous poll has been deleted.")
 	
 	@newpoll.error
 	async def newpoll_error(self, ctx, error):
@@ -221,11 +234,21 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	)
 	@commands.check(is_manager)
 	async def renamepoll(self, ctx, *, pollname):
-		data = readData(ctx.guild.id)
+
+		# load poll
+		poll = db.polls.find_one({ "guild": ctx.guild.id })
+		if poll == None:
+			await ctx.send("Poll not found!")
+			return
+
 		pollname = sanitizeInput(pollname)
-		data["pollname"] = pollname
-		writeData(ctx.guild.id, data)
-		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! Previous submissions have been deleted.")
+
+		# update poll
+		db.polls.update_one(
+			{ "guild": ctx.guild.id },
+			{ "$set": { "name": pollname } }
+		)
+		await ctx.send(f"`{poll['name']}` has been renamed to `{pollname}`!")
 	
 	@renamepoll.error
 	async def renamepoll_error(self, ctx, error):
@@ -241,9 +264,6 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def setrole(self, ctx, *, rolename):
 
-		# load guild json
-		data = readData(ctx.guild.id)
-
 		rolename = sanitizeInput(rolename)
 
 		# lookup and see if role already exists, create if not
@@ -255,8 +275,14 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 				await ctx.send("I don't have the `Manage Roles` permission!")
 				return
 
-		data["config"]["memberrole"] = role.id
-		writeData(ctx.guild.id, data)
+		# get guild config, create if not found
+		config = getConfig(ctx)
+
+		# update config
+		db.guilds.update_one(
+			{ "_id": ctx.guild.id },
+			{ "$set": { "role": role.id } }
+		)
 
 		await ctx.send(f"`{role.name}` is now the poll member role!")
 
@@ -274,22 +300,25 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def unsetrole(self, ctx):
 
-		# load guild json
-		data = readData(ctx.guild.id)
+		# get guild config, create if not found
+		config = getConfig(ctx)
 
 		# check if member role is set
-		if "memberrole" not in data["config"]:
+		if config["role"] == None:
 			await ctx.send("Poll member role not set!")
 			return
 
 		# check if member role exists in guild
-		role = discord.utils.get(ctx.guild.roles, id=data["config"]["memberrole"])
+		role = discord.utils.get(ctx.guild.roles, id=config["role"])
 		if role == None:
 			await ctx.send("Could not find the poll member role!")
 			return
 
-		data["config"].pop("memberrole")
-		writeData(ctx.guild.id, data)
+		# update config
+		db.guilds.update_one(
+			{ "_id": ctx.guild.id },
+			{ "$set": { "role": None } }
+		)
 
 		await ctx.send(f"The poll member role has been unset! Anyone can submit to polls now.")
 
@@ -301,20 +330,24 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def togglemanager(self, ctx, member: discord.Member):
 
-		# load guild json
-		data = readData(ctx.guild.id)
+		# get guild config, create if not found
+		config = getConfig(ctx)
 
 		# currently not a manager
-		if member.id not in data["config"]["managers"]:
-			data["config"]["managers"].append(member.id)
+		if member.id not in config["managers"]:
+			db.guilds.update_one(
+				{ "_id": ctx.guild.id },
+				{ "$push": { "managers": member.id} }
+			)
 			await ctx.send(f"`{member.name}` is now a manager!")
 
 		# already a manager
 		else:
-			data["config"]["managers"].remove(member.id)
+			db.guilds.update_one(
+				{ "_id": ctx.guild.id },
+				{ "$pull": { "managers": member.id} }
+			)
 			await ctx.send(f"`{member.name}` is no longer a manager!")
-
-		writeData(ctx.guild.id, data)
 
 	@togglemanager.error
 	async def togglemanager_error(self, ctx, error):
@@ -329,6 +362,14 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 async def ping(ctx):
 	await ctx.send(f"pong! {round(bot.latency * 1000)}ms")
 
+# helper function to create config if not found
+def getConfig(ctx):
+	config = db.guilds.find_one({ "_id": ctx.guild.id })
+	if config == None:
+		config = { "_id": ctx.guild.id, "role": None, "managers": [] }
+		db.guilds.insert_one(config)
+	return config
+
 # helper functions to read and write to guild json
 def readData(id):
 	try:
@@ -342,6 +383,7 @@ def writeData(id, data):
 	with open(f"data/{id}.json", "w") as f:
 		json.dump(data, f, indent=4)
 
+# TODO: input length limit
 def sanitizeInput(input):
 	chunks = input.split('\n')
 	return chunks[0]
