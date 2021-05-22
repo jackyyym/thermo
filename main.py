@@ -88,6 +88,10 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			return
 
 		submission = sanitizeInput(submission)
+		# cap string length
+		if len(submission) > 64:
+			await ctx.send("Submission text too long! Limit is 64 characters.")
+			return
 		
 		# add submission
 		db.submissions.insert_one({ "poll": poll["_id"], "user": ctx.author.id, "text": submission })
@@ -176,13 +180,19 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		if poll == None:
 			await ctx.send("Poll not found!")
 			return
+
+		# check if submissions exist
+		submissions = db.submissions.find({ "poll": poll["_id"] })
+		if submissions == None:
+			await ctx.send("No submissions yet! Use `submit` to place a submission.")
+			return
 		
 		message = await ctx.send('`generating poll`')
 
 		# generate main body of embed
 		desc = ''
 		used_emoji = []
-		for item in poll["submissions"]:
+		for submission in submissions:
 
 			# randomly select an unused emoji
 			# TODO: use random.sample()
@@ -194,8 +204,8 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			used_emoji.append(emoji)
 
 			# add line to embed description
-			user = await bot.fetch_user(item["user"])
-			desc += f"{emoji} : **{item['text']}** - {user.mention}\n\n"
+			user = await bot.fetch_user(submission["user"])
+			desc += f"{emoji} : **{submission['text']}** - {user.mention}\n\n"
 
 			# add matching reaction
 			await message.add_reaction(emoji)
@@ -226,6 +236,10 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			db.polls.delete_one({ "guild": ctx.guild.id })
 
 		pollname = sanitizeInput(pollname)
+		# cap string length
+		if len(pollname) > 64:
+			await ctx.send("Poll name too long! Limit is 64 characters.")
+			return
 
 		config = getConfig(ctx)
 		limit = config["submission-limit"]
@@ -253,6 +267,10 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			return
 
 		pollname = sanitizeInput(pollname)
+		# cap string length
+		if len(pollname) > 64:
+			await ctx.send("Poll name too long! Limit is 64 characters.")
+			return
 
 		# update poll
 		db.polls.update_one(

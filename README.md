@@ -13,8 +13,8 @@ Customizable Discord bot created to handle polls with user submission. Written i
 *Upcoming:*
 - Automatic counting of votes on a poll.
 - Manage how many times a user can vote on a poll.
+- Managers can remove other user's submissions.
 - Smarter interaction with the bot via reacting to messages.
-- Music bot functionality?
 <br><br>
 
 # Commands:
