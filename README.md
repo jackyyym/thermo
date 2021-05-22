@@ -30,6 +30,7 @@ Customizable Discord bot created to handle polls with user submission. Written i
 - `renamepoll <pollname>` - *Rename the current poll.*
 - `setrole <rolename>` - *Set the poll member role.*
 - `unsetrole` - *Unsets poll member role.*
+- `setlimit` - *Set limit on submissions per user.*
 - `togglemanager <member>` - *Toggle manager permissions for a user.*
 
 ### **Misc:**
