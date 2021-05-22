@@ -24,7 +24,7 @@ async def on_ready():
 	await bot.change_presence(activity=activity)
 
 # cog for poll commands
-class GroupPoll(commands.Cog, name="Group Poll"):
+class Poll(commands.Cog):
 
 	# check if user is a poll manager or admin
 	# TODO: move output to dedicated error function for checks
@@ -74,24 +74,32 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_member)
 	async def submit(self, ctx, *, submission):
 
-		# respond if poll not found
-		poll = db.polls.find_one( { "guild": ctx.guild.id } )
-		if poll == None:
-			await ctx.send("Poll not found!")
+		# cap string length
+		if len(submission) > 64:
+			await ctx.send("Submission text too long! Limit is 64 characters.")
+			return
+
+		# ensure there is a closed poll
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
+		if poll_count == 0:
+			await ctx.send("No polls available! Polls currently collecting votes cannot be submitted to.")
+			return
+
+		# choose poll to submit to
+		poll_id = await choosePoll(ctx, False)
+		if poll_id == None:
 			return
 
 		# check if user has reached max submissions
 		# TODO: allow them to react to overwrite submission
+		poll = db.polls.find_one({ "_id": poll_id })
 		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
 		if submission_count >= poll["submission-limit"]:
 			await ctx.send("You're already at your maximum submissions for this poll!. Use `unsubmit` to remove one first.")
 			return
 
 		submission = sanitizeInput(submission)
-		# cap string length
-		if len(submission) > 64:
-			await ctx.send("Submission text too long! Limit is 64 characters.")
-			return
+
 		
 		# add submission
 		db.submissions.insert_one({ "poll": poll["_id"], "user": ctx.author.id, "text": submission })
@@ -111,13 +119,19 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_member)
 	async def unsubmit(self, ctx):
 
-		# respond if poll not found
-		poll = db.polls.find_one( { "guild": ctx.guild.id } )
-		if poll == None:
-			await ctx.send("Poll not found!")
+		# ensure there is a closed poll
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
+		if poll_count == 0:
+			await ctx.send("No polls available! Polls currently collecting votes cannot have submissions deleted.")
+			return
+
+		# choose poll to submit to
+		poll_id = await choosePoll(ctx, False)
+		if poll_id == None:
 			return
 
 		# ensure user has a submission
+		poll = db.polls.find_one({ "_id": poll_id })
 		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
 		if submission_count == 0:
 			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
@@ -148,40 +162,101 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_member)
 	async def submissions(self, ctx):
 
-		# load poll
-		poll = db.polls.find_one({ "guild": ctx.guild.id })
-		if poll == None:
-			await ctx.send("Poll not found!")
+		# ensure there is a closed poll
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id })
+		if poll_count == 0:
+			await ctx.send("No polls found!")
+			return
+
+		# choose poll to view submissions of
+		poll_id = await choosePoll(ctx, None)
+		if poll_id == None:
 			return
 
 		# check if submissions exist
+		poll = db.polls.find_one({ "_id": poll_id })
 		submissions = db.submissions.find({ "poll": poll["_id"] })
 		if submissions == None:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
 			return
 		
 		# format and send response as blockquote
-		response = f"\n>>> *{poll['name']}*\n"
+		response = f"\n>>> **{poll['name']}**\n"
 		for submission in submissions:
 			user = await bot.fetch_user(submission["user"])
-			response += f"{submission['text']} - {user.name}\n"
+			response += f"{submission['text']} - *{user.name}*\n"
 		await ctx.send(response)
 
-	# creates a poll from user submissions
+	# view list of current polls
 	@commands.command(
-		help = "Create a poll from user submissions. Does not delete submissions.",
-		brief = "Create a poll from user submissions."
+		help = "Display a list of all polls, and if the poll is collecting votes.",
+		brief = "List all polls."
+	)
+	@commands.check(is_member)
+	async def polls(self, ctx):
+
+		# ensure there is a closed poll
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id })
+		if poll_count == 0:
+			await ctx.send("No polls found!")
+			return
+		
+		# format and send response as blockquote
+		polls = db.polls.find({ "guild": ctx.guild.id })
+		response = f"\n>>> **Polls:**\n"
+		for poll in polls:
+			if poll["open"]:
+				response += f"{poll['name']} - *Collecting Votes*\n"
+			else:
+				response += f"{poll['name']}\n"
+		await ctx.send(response)
+
+	# start new poll, giving a new title
+	@commands.command(
+		help = "Clear current submissions to begin a new poll. Provide the title of the poll. WARNING: deleted submissions are non-recoverable.",
+		brief = "Clear current submissions to begin a new poll."
 	)
 	@commands.check(is_manager)
-	async def createpoll(self, ctx):
+	async def newpoll(self, ctx, *, pollname):
 
-		# load poll
-		poll = db.polls.find_one({ "guild": ctx.guild.id })
-		if poll == None:
-			await ctx.send("Poll not found!")
+		pollname = sanitizeInput(pollname)
+		# cap string length
+		if len(pollname) > 64:
+			await ctx.send("Poll name too long! Limit is 64 characters.")
+			return
+
+		config = getConfig(ctx)
+		limit = config["submission-limit"]
+
+		db.polls.insert_one({ "guild": ctx.guild.id, "name": pollname, "submission-limit": limit, "open": False })
+		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! Submission limit per user is `{limit}`.")
+	
+	@newpoll.error
+	async def newpoll_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+newpoll <poll name>`")
+
+	# generates a poll from user submissions
+	@commands.command(
+		help = "Generates a poll from user submission to begin vote collection.",
+		brief = "Open a poll to begin vote collection."
+	)
+	@commands.check(is_manager)
+	async def openpoll(self, ctx):
+
+		# return if no polls exist
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id })
+		if poll_count == 0:
+			await ctx.send("No polls found!")
+			return
+
+		# prompt user to choose a closed poll
+		poll_id = await choosePoll(ctx, False)
+		if poll_id == None:
 			return
 
 		# check if submissions exist
+		poll = db.polls.find_one({ "_id": poll_id })
 		submissions = db.submissions.find({ "poll": poll["_id"] })
 		if submissions == None:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
@@ -219,38 +294,41 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 
 		await message.edit(content='', embed=embed)
 
-	# start new poll, giving a new title
+	# count votes on open poll
 	@commands.command(
-		help = "Clear current submissions to begin a new poll. Provide the title of the poll. WARNING: deleted submissions are non-recoverable.",
-		brief = "Clear current submissions to begin a new poll."
+		help = "Closes the poll to end vote collection, and counts the votes up.",
+		brief = "Close poll and count votes."
 	)
 	@commands.check(is_manager)
-	async def newpoll(self, ctx, *, pollname):
+	async def closepoll(self, ctx):
+		await ctx.send("Coming Soon!")
 
-		# check if previous poll exists
-		if db.polls.count_documents({ "guild": ctx.guild.id }, limit = 1) > 0:
-			# remove previous poll's submissions
-			poll = db.polls.find_one({ "guild": ctx.guild.id })
-			db.submissions.delete_many({ "poll": poll["_id"] })
-			# remove previous poll
-			db.polls.delete_one({ "guild": ctx.guild.id })
+	# delete closed poll
+	@commands.command(
+		help = "Delete chosen poll. Can only delete polls not currently collecting votes.",
+		brief = "Delete closed poll."
+	)
+	@commands.check(is_manager)
+	async def deletepoll(self, ctx):
 
-		pollname = sanitizeInput(pollname)
-		# cap string length
-		if len(pollname) > 64:
-			await ctx.send("Poll name too long! Limit is 64 characters.")
+		# return if no polls exist
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
+		if poll_count == 0:
+			await ctx.send("No polls to delete! Polls must not be collecting votes to be deleted, use `closepoll` to close a vote.")
 			return
 
-		config = getConfig(ctx)
-		limit = config["submission-limit"]
+		# prompt user to choose a closed poll
+		poll_id = await choosePoll(ctx, False)
+		if poll_id == None:
+			return
 
-		db.polls.insert_one({ "guild": ctx.guild.id, "name": pollname, "submission-limit": limit, "posted": False })
-		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! Submission limit per user is `{limit}`.")
-	
-	@newpoll.error
-	async def newpoll_error(self, ctx, error):
-		if isinstance(error, commands.MissingRequiredArgument):
-			await ctx.send("Usage: `+newpoll <poll name>`")
+		# delete poll submissions
+		db.submissions.delete_many({ "poll": poll_id })
+
+		# delete poll
+		pollname = db.polls.find_one({ "_id": poll_id })["name"]
+		db.polls.delete_one({ "_id": poll_id })
+		await ctx.send(f"Poll `{pollname}` has been deleted!")
 
 	# renames current poll
 	@commands.command(
@@ -364,13 +442,17 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			await ctx.send("Submission limit needs to be a number!")
 			return
 		limit = int(limit)
+		
+		# prompt user to choose a closed poll
+		poll_id = await choosePoll(ctx, False)
+		if poll_id == None:
+			return
 
 		# update config
 		db.polls.update_one(
-			{ "guild": ctx.guild.id },
+			{ "_id": poll_id },
 			{ "$set": { "submission-limit": limit } }
 		)
-
 		await ctx.send(f"Submission limit set to `{limit}`!")
 
 	@setlimit.error
@@ -431,61 +513,121 @@ def getConfig(ctx):
 		db.guilds.insert_one(config)
 	return config
 
+# helper function to prompt user to choose a poll
+async def choosePoll(ctx, is_open):
+
+	# print list of submissions
+	message = await ctx.send('`getting polls`')
+
+	# get list of polls
+	if is_open == None:
+		polls = db.polls.find({ "guild": ctx.guild.id })
+	else:
+		polls = db.polls.find({ "guild": ctx.guild.id, "open":is_open })
+
+	# generate main body of embed
+	desc = ''
+	used_emoji = []
+	for poll in polls: 
+		# randomly select an unused emoji
+		# TODO: use random.sample()
+		# TODO: have a case for when the server doesn't have enough emoji
+		while True:
+			emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
+			if emoji not in used_emoji:
+				break
+		used_emoji.append(emoji)
+
+		# add line to embed description
+		desc += f"{emoji} : **{poll['name']}**\n\n"
+
+		# add matching reaction
+		await message.add_reaction(emoji)
+
+	embed = discord.Embed(
+		title = "Choose Poll:",
+		description = desc,
+		color = discord.Color.blue()
+	)
+
+	await message.edit(content='', embed=embed)
+
+	# check if reaction matches one in poll
+	def check(reaction, user):
+		return reaction.emoji in used_emoji and user.id == ctx.author.id
+
+	# await user reaction
+	try:
+		reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+	except asyncio.TimeoutError:
+		await message.clear_reactions()
+		await message.edit(content="`timed out!`", embed=None)
+		return None
+
+	await message.delete()
+
+	# find poll index based on reaction
+	index = used_emoji.index(reaction.emoji)
+
+	# return chosen poll id
+	polls.rewind()
+	return polls[index]["_id"]
+
 # helper function to prompt user to choose a submission
 async def chooseSubmission(ctx, poll):
 
-		# print list of submissions
-		message = await ctx.send('`getting submissions`')
+	# print list of submissions
+	message = await ctx.send('`getting submissions`')
 
-		# generate main body of embed
-		desc = ''
-		used_emoji = []
-		submissions = db.submissions.find({ "poll": poll["_id"], "user": ctx.author.id })
-		for submission in submissions: 
-			# randomly select an unused emoji
-			# TODO: use random.sample()
-			# TODO: have a case for when the server doesn't have enough emoji
-			while True:
-				emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
-				if emoji not in used_emoji:
-					break
-			used_emoji.append(emoji)
+	# generate main body of embed
+	desc = ''
+	used_emoji = []
+	submissions = db.submissions.find({ "poll": poll["_id"], "user": ctx.author.id })
+	for submission in submissions: 
+		# randomly select an unused emoji
+		# TODO: use random.sample()
+		# TODO: have a case for when the server doesn't have enough emoji
+		while True:
+			emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
+			if emoji not in used_emoji:
+				break
+		used_emoji.append(emoji)
 
-			# add line to embed description
-			user = await bot.fetch_user(submission["user"])
-			desc += f"{emoji} : **{submission['text']}** - {user.mention}\n\n"
+		# add line to embed description
+		user = await bot.fetch_user(submission["user"])
+		desc += f"{emoji} : **{submission['text']}** - {user.mention}\n\n"
 
-			# add matching reaction
-			await message.add_reaction(emoji)
+		# add matching reaction
+		await message.add_reaction(emoji)
 
-		embed = discord.Embed(
-			title = poll['name'],
-			description = desc,
-			color = discord.Color.blue()
-		)
+	embed = discord.Embed(
+		title = "Choose Submission:",
+		description = desc,
+		color = discord.Color.blue()
+	)
 
-		await message.edit(content='', embed=embed)
+	await message.edit(content='', embed=embed)
 
-		# check if reaction matches one in poll
-		def check(reaction, user):
-			return reaction.emoji in used_emoji and user.id == ctx.author.id
+	# check if reaction matches one in poll
+	def check(reaction, user):
+		return reaction.emoji in used_emoji and user.id == ctx.author.id
 
-		# await user reaction
-		try:
-			reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
-		except asyncio.TimeoutError:
-			await message.clear_reactions()
-			await message.edit(content="`timed out!`", embed=None)
-			return None
+	# await user reaction
+	try:
+		reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+	except asyncio.TimeoutError:
+		await message.clear_reactions()
+		await message.edit(content="`timed out!`", embed=None)
+		return None
 
-		await message.delete()
+	await message.delete()
 
-		# find submission index based on reaction
-		index = used_emoji.index(reaction.emoji)
+	# find submission index based on reaction
+	index = used_emoji.index(reaction.emoji)
 
-		# return chosen submission id
-		submissions.rewind()
-		return submissions[index]["_id"]
+	# return chosen submission id
+	submissions.rewind()
+	return submissions[index]["_id"]
 
 # TODO: input length limit
 def sanitizeInput(input):
@@ -493,7 +635,7 @@ def sanitizeInput(input):
 	return chunks[0]
 
 # load cogs
-bot.add_cog(GroupPoll(bot))
+bot.add_cog(Poll(bot))
 
 # load and run token from file
 token = open('token', 'r').read()

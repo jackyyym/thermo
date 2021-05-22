@@ -5,10 +5,11 @@ Customizable Discord bot created to handle polls with user submission. Written i
 <br><br>
 
 # Features:
+- Create and manage multiple polls.
 - Automatic generation of poll using guild's emoji.
-- Configurable memeber role to control who can place submissions.
-- Configureable user submission limits.
-- Toggleable manager permissions to use certain commants.
+- Configurable member role to control who can place submissions.
+- Configurable user submission limits.
+- Toggle manager permissions for users to use certain commands.
 
 *Upcoming:*
 - Automatic counting of votes on a poll.
