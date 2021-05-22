@@ -145,8 +145,9 @@ class Poll(commands.Cog):
 			return
 		elif submission_count == 1:
 			# remove submission
+			removed_text = db.submissions.find_one({ "poll": poll["_id"], "user": ctx.author.id })["text"]
 			db.submissions.delete_one({ "poll": poll["_id"], "user": ctx.author.id })
-			await ctx.send(f"Submission removed from `{poll['name']}`!")
+			await ctx.send(f"Submission `{removed_text}` removed from `{poll['name']}`!")
 			return
 
 		# prompt user to choose a submission
@@ -580,7 +581,7 @@ async def choosePoll(ctx, is_open):
 		await message.add_reaction(emoji)
 
 	embed = discord.Embed(
-		title = "Choose Poll:",
+		title = "Choose poll:",
 		description = desc,
 		color = discord.Color.blue()
 	)
@@ -636,7 +637,7 @@ async def chooseSubmission(ctx, poll):
 		await message.add_reaction(emoji)
 
 	embed = discord.Embed(
-		title = "Choose Submission:",
+		title = f"Choose submission from `{poll['name']}`:",
 		description = desc,
 		color = discord.Color.blue()
 	)
