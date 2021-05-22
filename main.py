@@ -3,8 +3,8 @@ from discord.ext import commands
 import pymongo
 import logging
 import random
-import json
 import certifi
+import asyncio
 
 # enable basic logging
 logging.basicConfig(level=logging.INFO)
@@ -75,26 +75,23 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	async def submit(self, ctx, *, submission):
 
 		# respond if poll not found
-		if db.polls.count_documents({ "guild": ctx.guild.id }, limit = 1) == 0:
+		poll = db.polls.find_one( { "guild": ctx.guild.id } )
+		if poll == None:
 			await ctx.send("Poll not found!")
 			return
 
-		# ensure this is users first submission
+		# check if user has reached max submissions
 		# TODO: allow them to react to overwrite submission
-		query = { "guild": ctx.guild.id, "submissions.user": ctx.author.id }
-		if db.polls.count_documents(query, limit = 1) > 0:
-			await ctx.send("You've already made a submission! Use `unsubmit` to remove it first.")
+		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
+		if submission_count >= poll["submission-limit"]:
+			await ctx.send("You're already at your maximum submissions for this poll!. Use `unsubmit` to remove one first.")
 			return
 
 		submission = sanitizeInput(submission)
 		
 		# add submission
-		db.polls.update_one(
-			{ "guild": ctx.guild.id },
-			{ "$push": { "submissions": { "user": ctx.author.id, "text": submission } } }
-		)
+		db.submissions.insert_one({ "poll": poll["_id"], "user": ctx.author.id, "text": submission })
 
-		poll = db.polls.find_one({ "guild": ctx.guild.id })
 		await ctx.send(f"Submitted to poll `{poll['name']}`! Use `submissions` to see a list of submissions.")
 
 	@submit.error
@@ -117,19 +114,25 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			return
 
 		# ensure user has a submission
-		query = { "guild": ctx.guild.id, "submissions.user": ctx.author.id }
-		if db.polls.count_documents(query, limit = 1) == 0:
+		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
+		if submission_count == 0:
 			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
 			return
-		
-		# remove submission
-		db.polls.update_one(
-			{ "guild": ctx.guild.id },
-			{ "$pull": { "submissions": { "user": ctx.author.id } } }
-		)
+		elif submission_count == 1:
+			# remove submission
+			db.submissions.delete_one({ "poll": poll["_id"], "user": ctx.author.id })
+			await ctx.send(f"Submission removed from `{poll['name']}`!")
+			return
 
-		poll = db.polls.find_one( { "guild": ctx.guild.id } )
-		await ctx.send(f"Submission removed from `{poll['name']}`! Use `submit` to place a new submission")
+		# prompt user to choose a submission
+		submission_id = await chooseSubmission(ctx, poll)
+		if submission_id == None:
+			return
+
+		# remove submission
+		removed_text = db.submissions.find_one({ "_id": submission_id })["text"]
+		db.submissions.delete_one({ "_id": submission_id })
+		await ctx.send(f"Submission `{removed_text}` removed from `{poll['name']}`!")
 
 	# view list of current poll submissions
 	# TODO: configure user submission limit
@@ -147,15 +150,17 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 			await ctx.send("Poll not found!")
 			return
 
-		if len(poll["submissions"]) == 0:
+		# check if submissions exist
+		submissions = db.submissions.find({ "poll": poll["_id"] })
+		if submissions == None:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
 			return
-
+		
 		# format and send response as blockquote
 		response = f"\n>>> *{poll['name']}*\n"
-		for item in poll["submissions"]:
-			user = await bot.fetch_user(item["user"])
-			response += f"{item['text']} - {user.name}\n"
+		for submission in submissions:
+			user = await bot.fetch_user(submission["user"])
+			response += f"{submission['text']} - {user.name}\n"
 		await ctx.send(response)
 
 	# creates a poll from user submissions
@@ -212,15 +217,21 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	@commands.check(is_manager)
 	async def newpoll(self, ctx, *, pollname):
 
-		# remove previous poll if exists
+		# check if previous poll exists
 		if db.polls.count_documents({ "guild": ctx.guild.id }, limit = 1) > 0:
+			# remove previous poll's submissions
+			poll = db.polls.find_one({ "guild": ctx.guild.id })
+			db.submissions.delete_many({ "poll": poll["_id"] })
+			# remove previous poll
 			db.polls.delete_one({ "guild": ctx.guild.id })
 
 		pollname = sanitizeInput(pollname)
 
-		# create new poll
-		db.polls.insert_one({ "guild": ctx.guild.id, "name": pollname, "submissions": [], "posted": False })
-		await ctx.send(f"Ready to recieve submissions for the poll `{pollname}`! The previous poll has been deleted.")
+		config = getConfig(ctx)
+		limit = config["submission-limit"]
+
+		db.polls.insert_one({ "guild": ctx.guild.id, "name": pollname, "submission-limit": limit, "posted": False })
+		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! Submission limit per user is `{limit}`.")
 	
 	@newpoll.error
 	async def newpoll_error(self, ctx, error):
@@ -255,9 +266,9 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		if isinstance(error, commands.MissingRequiredArgument):
 			await ctx.send("Usage: `+renamepoll <poll name>`")
 
-	# set the poll member role, creates it if it doesnt exist
+	# set the poll member role, creates it if it doesn't exist
 	@commands.command(
-		help = "Designamtes a poll member role. Creates the role if it does not already exist. If a poll "+
+		help = "Designates a poll member role. Creates the role if it does not already exist. If a poll "+
 				"member role exists, only those with the role can submit to polls",
 		brief = "Set the poll member role."
 	)
@@ -294,7 +305,7 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 	# unsets the poll member role
 	# TODO: make it delete the role?
 	@commands.command(
-		help = "Unsets the poll member role if one is designated. This allows anyone to submit to polls.",
+		help = "Unset the poll member role if one is designated. This allows anyone to submit to polls.",
 		brief = "Unset the poll member role."
 	)
 	@commands.check(is_manager)
@@ -321,6 +332,33 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 		)
 
 		await ctx.send(f"The poll member role has been unset! Anyone can submit to polls now.")
+
+	# set the poll member role, creates it if it doesn't exist
+	@commands.command(
+		help = "Sets the limit on submissions per user. Limit can still be overridden for a specific "
+			+ "submission via optional paramater: `+newpoll <poll name> <submission limit>`",
+		brief = "Sets limit on submissions per user."
+	)
+	@commands.check(is_manager)
+	async def setlimit(self, ctx, limit):
+
+		if not limit.isnumeric():
+			await ctx.send("Submission limit needs to be a number!")
+			return
+		limit = int(limit)
+
+		# update config
+		db.polls.update_one(
+			{ "guild": ctx.guild.id },
+			{ "$set": { "submission-limit": limit } }
+		)
+
+		await ctx.send(f"Submission limit set to `{limit}`!")
+
+	@setlimit.error
+	async def setlimit_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+setlimit <submission limit>`")
 
 	# toggle manager permissions for a user
 	@commands.command(	
@@ -362,26 +400,74 @@ class GroupPoll(commands.Cog, name="Group Poll"):
 async def ping(ctx):
 	await ctx.send(f"pong! {round(bot.latency * 1000)}ms")
 
-# helper function to create config if not found
+# helper function to create default config if not found
 def getConfig(ctx):
 	config = db.guilds.find_one({ "_id": ctx.guild.id })
 	if config == None:
-		config = { "_id": ctx.guild.id, "role": None, "managers": [] }
+		config = { 
+			"_id": ctx.guild.id, 
+			"role": None, 
+			"submission-limit": 1,
+			"managers": []
+		}
 		db.guilds.insert_one(config)
 	return config
 
-# helper functions to read and write to guild json
-def readData(id):
-	try:
-		with open(f"data/{id}.json", "r+") as f:
-			data = json.load(f)
-	except IOError:
-		data = {"config": {"managers":[]},"submissions": []}
-	return data
+# helper function to prompt user to choose a submission
+async def chooseSubmission(ctx, poll):
 
-def writeData(id, data):
-	with open(f"data/{id}.json", "w") as f:
-		json.dump(data, f, indent=4)
+		# print list of submissions
+		message = await ctx.send('`getting submissions`')
+
+		# generate main body of embed
+		desc = ''
+		used_emoji = []
+		submissions = db.submissions.find({ "poll": poll["_id"], "user": ctx.author.id })
+		for submission in submissions: 
+			# randomly select an unused emoji
+			# TODO: use random.sample()
+			# TODO: have a case for when the server doesn't have enough emoji
+			while True:
+				emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
+				if emoji not in used_emoji:
+					break
+			used_emoji.append(emoji)
+
+			# add line to embed description
+			user = await bot.fetch_user(submission["user"])
+			desc += f"{emoji} : **{submission['text']}** - {user.mention}\n\n"
+
+			# add matching reaction
+			await message.add_reaction(emoji)
+
+		embed = discord.Embed(
+			title = poll['name'],
+			description = desc,
+			color = discord.Color.blue()
+		)
+
+		await message.edit(content='', embed=embed)
+
+		# check if reaction matches one in poll
+		def check(reaction, user):
+			return reaction.emoji in used_emoji and user.id == ctx.author.id
+
+		# await user reaction
+		try:
+			reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+		except asyncio.TimeoutError:
+			await message.clear_reactions()
+			await message.edit(content="`timed out!`", embed=None)
+			return None
+
+		await message.delete()
+
+		# find submission index based on reaction
+		index = used_emoji.index(reaction.emoji)
+
+		# return chosen submission id
+		submissions.rewind()
+		return submissions[index]["_id"]
 
 # TODO: input length limit
 def sanitizeInput(input):

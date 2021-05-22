@@ -131,3 +131,4 @@ dmypy.json
 # Bot files
 token
 mongo_url
+test-token
