@@ -84,15 +84,19 @@ class Poll(commands.Cog):
 		if poll_count == 0:
 			await ctx.send("No polls available! Polls currently collecting votes cannot be submitted to.")
 			return
-
-		# choose poll to submit to
-		poll_id = await choosePoll(ctx, False)
-		if poll_id == None:
-			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, False)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
 
 		# check if user has reached max submissions
 		# TODO: allow them to react to overwrite submission
-		poll = db.polls.find_one({ "_id": poll_id })
+
 		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
 		if submission_count >= poll["submission-limit"]:
 			await ctx.send("You're already at your maximum submissions for this poll!. Use `unsubmit` to remove one first.")
@@ -124,14 +128,17 @@ class Poll(commands.Cog):
 		if poll_count == 0:
 			await ctx.send("No polls available! Polls currently collecting votes cannot have submissions deleted.")
 			return
-
-		# choose poll to submit to
-		poll_id = await choosePoll(ctx, False)
-		if poll_id == None:
-			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, False)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
 
 		# ensure user has a submission
-		poll = db.polls.find_one({ "_id": poll_id })
 		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
 		if submission_count == 0:
 			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
@@ -167,14 +174,17 @@ class Poll(commands.Cog):
 		if poll_count == 0:
 			await ctx.send("No polls found!")
 			return
-
-		# choose poll to view submissions of
-		poll_id = await choosePoll(ctx, None)
-		if poll_id == None:
-			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, None)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
 
 		# check if submissions exist
-		poll = db.polls.find_one({ "_id": poll_id })
 		submissions = db.submissions.find({ "poll": poll["_id"] })
 		if submissions == None:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
@@ -245,18 +255,22 @@ class Poll(commands.Cog):
 	async def openpoll(self, ctx):
 
 		# return if no polls exist
-		poll_count = db.polls.count_documents({ "guild": ctx.guild.id })
+		# TODO: only open if the poll is not already open
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
 		if poll_count == 0:
 			await ctx.send("No polls found!")
 			return
-
-		# prompt user to choose a closed poll
-		poll_id = await choosePoll(ctx, False)
-		if poll_id == None:
-			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, False)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
 
 		# check if submissions exist
-		poll = db.polls.find_one({ "_id": poll_id })
 		submissions = db.submissions.find({ "poll": poll["_id"] })
 		if submissions == None:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
@@ -338,11 +352,20 @@ class Poll(commands.Cog):
 	@commands.check(is_manager)
 	async def renamepoll(self, ctx, *, pollname):
 
-		# load poll
-		poll = db.polls.find_one({ "guild": ctx.guild.id })
-		if poll == None:
-			await ctx.send("Poll not found!")
+		# return if no polls exist
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id })
+		if poll_count == 0:
+			await ctx.send("No polls found!")
 			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, False)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
 
 		pollname = sanitizeInput(pollname)
 		# cap string length
@@ -352,7 +375,7 @@ class Poll(commands.Cog):
 
 		# update poll
 		db.polls.update_one(
-			{ "guild": ctx.guild.id },
+			{ "_id": poll["_id"] },
 			{ "$set": { "name": pollname } }
 		)
 		await ctx.send(f"`{poll['name']}` has been renamed to `{pollname}`!")
@@ -443,14 +466,25 @@ class Poll(commands.Cog):
 			return
 		limit = int(limit)
 		
-		# prompt user to choose a closed poll
-		poll_id = await choosePoll(ctx, False)
-		if poll_id == None:
+		# return if no polls exist
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
+		if poll_count == 0:
+			await ctx.send("No polls found!")
 			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, False)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
+
 
 		# update config
 		db.polls.update_one(
-			{ "_id": poll_id },
+			{ "_id": poll["_id"] },
 			{ "$set": { "submission-limit": limit } }
 		)
 		await ctx.send(f"Submission limit set to `{limit}`!")
@@ -514,6 +548,7 @@ def getConfig(ctx):
 	return config
 
 # helper function to prompt user to choose a poll
+# TODO: Have cases for 0, 1, or 2+ polls built into this function
 async def choosePoll(ctx, is_open):
 
 	# print list of submissions
