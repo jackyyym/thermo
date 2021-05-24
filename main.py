@@ -74,9 +74,8 @@ class Poll(commands.Cog):
 	@commands.check(is_member)
 	async def submit(self, ctx, *, submission):
 
-		# cap string length
-		if len(submission) > 64:
-			await ctx.send("Submission text too long! Limit is 64 characters.")
+		submission = await sanitizeInput(ctx, submission)
+		if submission == None:
 			return
 
 		# ensure there is a closed poll
@@ -102,9 +101,6 @@ class Poll(commands.Cog):
 			await ctx.send("You're already at your maximum submissions for this poll!. Use `unsubmit` to remove one first.")
 			return
 
-		submission = sanitizeInput(submission)
-
-		
 		# add submission
 		db.submissions.insert_one({ "poll": poll["_id"], "user": ctx.author.id, "text": submission })
 
@@ -224,23 +220,26 @@ class Poll(commands.Cog):
 
 	# start new poll, giving a new title
 	@commands.command(
-		help = "Clear current submissions to begin a new poll. Provide the title of the poll. WARNING: deleted submissions are non-recoverable.",
-		brief = "Clear current submissions to begin a new poll."
+		help = "Creates a new poll using given name.",
+		brief = "Create a new poll."
 	)
 	@commands.check(is_manager)
 	async def newpoll(self, ctx, *, pollname):
 
-		pollname = sanitizeInput(pollname)
-		# cap string length
-		if len(pollname) > 64:
-			await ctx.send("Poll name too long! Limit is 64 characters.")
+		pollname = await sanitizeInput(ctx, pollname)
+		if pollname == None:
 			return
 
 		config = getConfig(ctx)
-		limit = config["submission-limit"]
-
-		db.polls.insert_one({ "guild": ctx.guild.id, "name": pollname, "submission-limit": limit, "open": False })
-		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! Submission limit per user is `{limit}`.")
+		db.polls.insert_one({ 
+			"guild": ctx.guild.id,
+			"name": pollname,
+			"submission-limit": config["submission-limit"],
+			"vote-limit": config["vote-limit"],
+			"open": False 
+		})
+		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! " +
+			f"Submission limit is `{config['submission-limit']}`, vote limit is `{config['vote-limit']}`.")
 	
 	@newpoll.error
 	async def newpoll_error(self, ctx, error):
@@ -272,7 +271,7 @@ class Poll(commands.Cog):
 			poll = db.polls.find_one({ "_id": poll_id })
 
 		# check if submissions exist
-		submissions = db.submissions.find({ "poll": poll["_id"] })
+		submissions = db.submissions.find({ "poll": poll["_id"] }).sort("text")
 		if submissions == None:
 			await ctx.send("No submissions yet! Use `submit` to place a submission.")
 			return
@@ -306,8 +305,13 @@ class Poll(commands.Cog):
 			color = discord.Color.blue()
 		)
 		embed.set_footer(text=f"Requested by {ctx.author.name}")
-
 		await message.edit(content='', embed=embed)
+
+		# update poll document with poll message id
+		db.polls.update_one(
+			{ "_id": poll["_id"] },
+			{ "$set": { "message": message.id, "open": True } }
+		)
 
 	# count votes on open poll
 	@commands.command(
@@ -316,7 +320,54 @@ class Poll(commands.Cog):
 	)
 	@commands.check(is_manager)
 	async def closepoll(self, ctx):
-		await ctx.send("Coming Soon!")
+		# return if no polls exist
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": True })
+		if poll_count == 0:
+			await ctx.send("No polls currently open!")
+			return
+		# prompt user to choose a closed poll
+		poll_id = await choosePoll(ctx, True)
+		if poll_id == None:
+			return
+
+		# acquire poll message
+		poll = db.polls.find_one({ "_id": poll_id })
+		poll_message = await ctx.fetch_message(poll["message"])
+
+		# sort list of reactions by count
+		results = poll_message.reactions
+		results.sort(key=lambda x: x.count, reverse=True)
+
+		# generate emoji key
+		key = []
+		for reaction in poll_message.reactions:
+			key.append(reaction.emoji)
+
+		# post results
+		submissions = db.submissions.find({ "poll": poll_id }).sort("text")
+
+		# generate main body of embed
+		desc = ''
+		used_emoji = []
+		for result in results:
+
+			# add line to embed description
+			index = key.index(result.emoji)
+			desc += f"{result.emoji} : **{submissions[index]['text']}** - *{result.count-1} votes*\n\n"
+
+		embed = discord.Embed(
+			title = f"{poll['name']} results:",
+			description = desc,
+			color = discord.Color.blue()
+		)
+		embed.set_footer(text=f"Requested by {ctx.author.name}")
+		await ctx.send(embed=embed)
+
+		db.polls.update_one(
+			{ "_id": poll_id },
+			{ "$set": { "open": False }, "$unset": { "message": "" } }
+		)
+
 
 	# delete closed poll
 	@commands.command(
@@ -368,10 +419,8 @@ class Poll(commands.Cog):
 				return
 			poll = db.polls.find_one({ "_id": poll_id })
 
-		pollname = sanitizeInput(pollname)
-		# cap string length
-		if len(pollname) > 64:
-			await ctx.send("Poll name too long! Limit is 64 characters.")
+		pollname = await sanitizeInput(ctx, pollname)
+		if pollname == None:
 			return
 
 		# update poll
@@ -395,7 +444,9 @@ class Poll(commands.Cog):
 	@commands.check(is_manager)
 	async def setrole(self, ctx, *, rolename):
 
-		rolename = sanitizeInput(rolename)
+		rolename = await sanitizeInput(ctx, rolename)
+		if rolename == None:
+			return
 
 		# lookup and see if role already exists, create if not
 		role = discord.utils.get(ctx.guild.roles, name=rolename)
@@ -453,14 +504,13 @@ class Poll(commands.Cog):
 
 		await ctx.send(f"The poll member role has been unset! Anyone can submit to polls now.")
 
-	# set the poll member role, creates it if it doesn't exist
+	# sets limit on submissions per user
 	@commands.command(
-		help = "Sets the limit on submissions per user. Limit can still be overridden for a specific "
-			+ "submission via optional paramater: `+newpoll <poll name> <submission limit>`",
-		brief = "Sets limit on submissions per user."
+		help = "Set the limit on submissions to a poll per user.",
+		brief = "Set limit on submissions per user."
 	)
 	@commands.check(is_manager)
-	async def setlimit(self, ctx, limit):
+	async def setsubmitlimit(self, ctx, limit):
 
 		if not limit.isnumeric():
 			await ctx.send("Submission limit needs to be a number!")
@@ -482,18 +532,57 @@ class Poll(commands.Cog):
 				return
 			poll = db.polls.find_one({ "_id": poll_id })
 
-
 		# update config
 		db.polls.update_one(
 			{ "_id": poll["_id"] },
 			{ "$set": { "submission-limit": limit } }
 		)
-		await ctx.send(f"Submission limit set to `{limit}`!")
+		await ctx.send(f"Submission limit for `{poll['name']}` set to `{limit}`!")
 
-	@setlimit.error
-	async def setlimit_error(self, ctx, error):
+	@setsubmitlimit.error
+	async def setsubmitlimit_error(self, ctx, error):
 		if isinstance(error, commands.MissingRequiredArgument):
-			await ctx.send("Usage: `+setlimit <submission limit>`")
+			await ctx.send("Usage: `+setsubmitlimit <submission limit>`")
+	
+	# sets limit on votes per user
+	@commands.command(
+		help = "Set the limit on votes to a poll per user.",
+		brief = "Set limit on votes per user."
+	)
+	@commands.check(is_manager)
+	async def setvotelimit(self, ctx, limit):
+
+		if not limit.isnumeric():
+			await ctx.send("Vote limit needs to be a number!")
+			return
+		limit = int(limit)
+		
+		# return if no polls exist
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
+		if poll_count == 0:
+			await ctx.send("No polls found!")
+			return
+		if poll_count == 1:
+			# choose only poll
+			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+		else: 
+			# choose poll to submit to
+			poll_id = await choosePoll(ctx, False)
+			if poll_id == None:
+				return
+			poll = db.polls.find_one({ "_id": poll_id })
+
+		# update config
+		db.polls.update_one(
+			{ "_id": poll["_id"] },
+			{ "$set": { "vote-limit": limit } }
+		)
+		await ctx.send(f"Vote limit for `{poll['name']}` set to `{limit}`!")
+
+	@setvotelimit.error
+	async def setvotelimit_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+setvotelimit <vote limit>`")
 
 	# toggle manager permissions for a user
 	@commands.command(	
@@ -543,6 +632,7 @@ def getConfig(ctx):
 			"_id": ctx.guild.id, 
 			"role": None, 
 			"submission-limit": 1,
+			"vote-limit": 1,
 			"managers": []
 		}
 		db.guilds.insert_one(config)
@@ -585,6 +675,7 @@ async def choosePoll(ctx, is_open):
 		description = desc,
 		color = discord.Color.blue()
 	)
+	embed.set_footer(text=f"Requested by {ctx.author.name}")
 
 	await message.edit(content='', embed=embed)
 
@@ -641,6 +732,7 @@ async def chooseSubmission(ctx, poll):
 		description = desc,
 		color = discord.Color.blue()
 	)
+	embed.set_footer(text=f"Requested by {ctx.author.name}")
 
 	await message.edit(content='', embed=embed)
 
@@ -666,9 +758,37 @@ async def chooseSubmission(ctx, poll):
 	return submissions[index]["_id"]
 
 # TODO: input length limit
-def sanitizeInput(input):
+async def sanitizeInput(ctx, input):
+	# cap string length
+	if len(input) > 64:
+		await ctx.send(f"Input too long! Limit is 64 characters, current count is `{len(input)}`")
+		return None
 	chunks = input.split('\n')
 	return chunks[0]
+
+# manage per user vote limits
+@bot.event
+async def on_raw_reaction_add(payload):
+
+	# return if reaction not on a poll
+	poll = db.polls.find_one({ "message": payload.message_id, "open": True })
+	if poll == None:
+		return
+
+	# count users votes in poll
+	message = await bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
+	vote_count = 0
+	for reaction in message.reactions:
+		users = await reaction.users().flatten()
+		if payload.member in users:
+			vote_count += 1
+	
+	# voted more than maximum allowed
+	if vote_count > poll["vote-limit"]:
+		await payload.member.send(f"You've already reached your maximum votes on the poll `{poll['name']}`. " +
+			f"The current maximum is `{poll['vote-limit']}` votes.")
+		reaction = discord.utils.get(message.reactions, emoji=payload.emoji)
+		await reaction.remove(payload.member)
 
 # load cogs
 bot.add_cog(Poll(bot))
