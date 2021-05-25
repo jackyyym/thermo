@@ -7,6 +7,7 @@ Customizable and robust Discord bot created to handle polls with user submission
 # Features:
 - Create and manage multiple polls.
 - Automatic vote counting, vote management, and customizable per-user vote limits.
+- Create an entire poll with `createpoll`, or let users submit poll options with `+newpoll`
 - Users can submit poll options, and per-user submission limits can be configured. 
 - Automatic generation of poll using guild's emoji.
 - Easy to use reaction-based interface.
@@ -14,29 +15,37 @@ Customizable and robust Discord bot created to handle polls with user submission
 - Toggle manager permissions for non-admins to create and manage polls.
 
 *Upcoming:*
-- Create an entire poll with a single `createpoll` command rather than going through the user submission process.
 - Managers can remove other user's submissions.
 <br><br>
 
 # How to Use:
-1. Create and name your poll with `+createpoll <poll name>`.
-	- optional: use `setsubmitlimit <limit>` and/or `setvotelimit <limit>` to control how
-	many times users can submit to and vote on polls.
+*Normal Use:*
+1. Create your poll with the command `+createpoll <poll name> <option 1> ... <option n>` (inputs are separated by quotes).
+	- *example:*  `+createpoll "Favorite Color" "Red" "Green" "Blue"`
+	- *optional:* set the amount of votes users can cast with `setvotelimit <vote limit>`, default is 1 vote per user.
+2. Once votes are cast, use the command `+closepoll` to end voting and output the poll results.
+	- *optional:* after this step the bot will ask if you'd like to delete the poll, if you choose not to you can start another round of vote collection later with `+openpoll`.
+
+*With User Submission:*
+1. Create and name your poll with `+newpoll <poll name>`.
+	- optional: use `+setsubmitlimit <limit>` and/or `+setvotelimit <limit>` to control how
+	many times users can submit to and vote on the created poll.
 2. Users can now submit poll options with `+submit <submission>`.
 3. Once submissions are received, generate and open the poll to voting with `+openpoll`
-4. Once all votes are cast, use `+closepoll` to end voting and display the top choices from the poll.
+4. Once all votes are cast, use `+closepoll` to end voting and output the poll results.
 5. Now use `+deletepoll` to delete the closed poll.
-	- optional: rather than deleting the poll you can continue user submission and reopen the poll at a later time.
+	- *optional:* after this step the bot will ask if you'd like to delete the poll, if you choose not to you can start another round of vote collection later with `+openpoll`
 <br><br>
 
 # Commands:
 ### **Group Poll:**
-*Member Commands*
+*Member Commands:*
 - `submit <submission>` - *Submit your choice for the current poll.*
 - `unsubmit` - *Remove your submission from the current poll.*
 - `submissions` - *List current poll submissions.*
 
-*Admin/Manager Commands*
+*Admin/Manager Commands:*
+- `createpoll <poll name> <option 1> ... <option n>` - *Create a new poll from a list of options.*
 - `newpoll <poll name>` - *Clear current submissions to begin a new poll.*
 - `openpoll` – *Open a poll to begin vote collection.*
 - `closepoll` – Close poll and count votes.
@@ -49,7 +58,8 @@ Customizable and robust Discord bot created to handle polls with user submission
 - `togglemanager <member>` - *Toggle manager permissions for a user.*
 
 ### **Misc:**
-- `ping` - *Display current ping.*
+- `guide` - *Links to the how-to-use webpage.*
 - `help` - *Display list of commands.*
 - `help <command>` - *Get info about a particular command.*
+- `ping` - *Display current ping.*
 <br><br>

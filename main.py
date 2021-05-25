@@ -218,10 +218,46 @@ class Poll(commands.Cog):
 				response += f"{poll['name']}\n"
 		await ctx.send(response)
 
-	# start new poll, giving a new title
+	# creates a new poll from a list of optoins
 	@commands.command(
-		help = "Creates a new poll using given name.",
-		brief = "Create a new poll."
+		help = "Create a new poll from a list of quote-separated options. Use this command when you want to quickly " +
+			"create a poll where you define what all the options are ahead of time. To create a poll that " +
+			"allows for users to submit poll options, see the command `+newpoll <poll name>`.",
+		brief = "Create a new poll from a list of options."
+	)
+	@commands.check(is_manager)
+	async def createpoll(self, ctx, pollname, *options):
+
+		pollname = await sanitizeInput(ctx, pollname)
+		if pollname == None:
+			return
+		
+		# sanitize list of options
+		for option in options:
+			option = await sanitizeInput(ctx, option)
+			if option == None:
+				return
+
+		config = getConfig(ctx)
+		poll = db.polls.insert_one({ 
+			"guild": ctx.guild.id,
+			"name": pollname,
+			"submission-limit": 0,
+			"vote-limit": config["vote-limit"],
+			"open": False 
+		})
+
+		for option in options:
+			db.submissions.insert_one({ "poll": poll.inserted_id, "user": None, "text": option })
+
+		await generatePoll(ctx, poll.inserted_id)
+
+	# start new poll for user submission, giving a new title
+	@commands.command(
+		help = "Creates a new poll that is open to user submission. Use this command when you want " +
+			"to allow for users submit poll options. To create a poll where you define all poll options " +
+			"ahead of time, see the command `+createpoll <poll name> <options>`",
+		brief = "Create a new poll that is open to user submission."
 	)
 	@commands.check(is_manager)
 	async def newpoll(self, ctx, *, pollname):
@@ -262,56 +298,14 @@ class Poll(commands.Cog):
 			return
 		if poll_count == 1:
 			# choose only poll
-			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+			poll_id = db.polls.find_one({ "guild": ctx.guild.id, "open": False })["_id"]
 		else: 
 			# choose poll to submit to
 			poll_id = await choosePoll(ctx, False)
 			if poll_id == None:
 				return
-			poll = db.polls.find_one({ "_id": poll_id })
-
-		# check if submissions exist
-		submissions = db.submissions.find({ "poll": poll["_id"] }).sort("text")
-		if submissions == None:
-			await ctx.send("No submissions yet! Use `submit` to place a submission.")
-			return
 		
-		message = await ctx.send('`generating poll`')
-
-		# generate main body of embed
-		desc = ''
-		used_emoji = []
-		for submission in submissions:
-
-			# randomly select an unused emoji
-			# TODO: use random.sample()
-			# TODO: have a case for when the server doesn't have enough emoji
-			while True:
-				emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
-				if emoji not in used_emoji:
-					break
-			used_emoji.append(emoji)
-
-			# add line to embed description
-			user = await bot.fetch_user(submission["user"])
-			desc += f"{emoji} : **{submission['text']}** - {user.mention}\n\n"
-
-			# add matching reaction
-			await message.add_reaction(emoji)
-
-		embed = discord.Embed(
-			title = poll['name'],
-			description = desc,
-			color = discord.Color.blue()
-		)
-		embed.set_footer(text=f"Requested by {ctx.author.name}")
-		await message.edit(content='', embed=embed)
-
-		# update poll document with poll message id
-		db.polls.update_one(
-			{ "_id": poll["_id"] },
-			{ "$set": { "message": message.id, "open": True } }
-		)
+		await generatePoll(ctx, poll_id)
 
 	# count votes on open poll
 	@commands.command(
@@ -558,16 +552,16 @@ class Poll(commands.Cog):
 		limit = int(limit)
 		
 		# return if no polls exist
-		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
+		poll_count = db.polls.count_documents({ "guild": ctx.guild.id })
 		if poll_count == 0:
 			await ctx.send("No polls found!")
 			return
 		if poll_count == 1:
 			# choose only poll
-			poll = db.polls.find_one({ "guild": ctx.guild.id, "open": False })
+			poll = db.polls.find_one({ "guild": ctx.guild.id })
 		else: 
 			# choose poll to submit to
-			poll_id = await choosePoll(ctx, False)
+			poll_id = await choosePoll(ctx, None)
 			if poll_id == None:
 				return
 			poll = db.polls.find_one({ "_id": poll_id })
@@ -618,11 +612,20 @@ class Poll(commands.Cog):
 
 # MISC COMMANDS
 @bot.command(
+	help = "*Direct messages you a guide on how to use this bot.*",
+	brief = "*Direct messages you a guide on how to use this bot.*"
+)
+async def guide(ctx):
+	await ctx.author.send("Check out the guide here: https://thermobot.xyz/#how-to-use")
+
+# MISC COMMANDS
+@bot.command(
 	help = "Displays current latency",
 	brief = "Ping Pong!"
 )
 async def ping(ctx):
 	await ctx.send(f"pong! {round(bot.latency * 1000)}ms")
+
 
 # helper function to create default config if not found
 def getConfig(ctx):
@@ -757,7 +760,56 @@ async def chooseSubmission(ctx, poll):
 	submissions.rewind()
 	return submissions[index]["_id"]
 
-# TODO: input length limit
+# helper function to generate a poll from given poll_id
+async def generatePoll(ctx, poll_id):
+
+	# check if submissions exist
+	submissions = db.submissions.find({ "poll": poll_id }).sort("text")
+	if submissions == None:
+		await ctx.send("No submissions yet! Use `submit` to place a submission.")
+		return
+
+	message = await ctx.send('`generating poll`')
+
+	# generate main body of embed
+	desc = ''
+	used_emoji = []
+	for submission in submissions:
+
+		# randomly select an unused emoji
+		# TODO: use random.sample()
+		# TODO: have a case for when the server doesn't have enough emoji
+		while True:
+			emoji = ctx.guild.emojis[random.randint(0, len(ctx.guild.emojis)-1)]
+			if emoji not in used_emoji:
+				break
+		used_emoji.append(emoji)
+
+		# add line to embed description
+		if submission["user"] == None:
+			desc += f"{emoji} : **{submission['text']}**\n\n"
+		else:
+			user = await bot.fetch_user(submission["user"])
+			desc += f"{emoji} : **{submission['text']}** - {user.mention}\n\n"
+
+		# add matching reaction
+		await message.add_reaction(emoji)
+
+	poll = db.polls.find_one({ "_id": poll_id })
+	embed = discord.Embed(
+		title = poll['name'],
+		description = desc,
+		color = discord.Color.blue()
+	)
+	embed.set_footer(text=f"Requested by {ctx.author.name}")
+	await message.edit(content='', embed=embed)
+
+	# update poll document with poll message id
+	db.polls.update_one(
+		{ "_id": poll_id },
+		{ "$set": { "message": message.id, "open": True } }
+	)
+
 async def sanitizeInput(ctx, input):
 	# cap string length
 	if len(input) > 64:
@@ -787,8 +839,13 @@ async def on_raw_reaction_add(payload):
 	if vote_count > poll["vote-limit"]:
 		await payload.member.send(f"You've already reached your maximum votes on the poll `{poll['name']}`. " +
 			f"The current maximum is `{poll['vote-limit']}` votes.")
-		reaction = discord.utils.get(message.reactions, emoji=payload.emoji)
-		await reaction.remove(payload.member)
+
+		# print error message if without proper permissions to remove reaction
+		if not message.channel.server.me.guild_permissions.manage_messages:
+			await message.channel.send("`Error! I need the Manage Messages permission to remove votes beyond the user vote limit.`")
+		else:
+			reaction = discord.utils.get(message.reactions, emoji=payload.emoji)
+			await reaction.remove(payload.member)
 
 # load cogs
 bot.add_cog(Poll(bot))
