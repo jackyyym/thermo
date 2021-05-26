@@ -638,7 +638,7 @@ class Poll(commands.Cog):
 	brief = "*Direct messages you a guide on how to use this bot.*"
 )
 async def guide(ctx):
-	await ctx.author.send("Check out the guide here: https://thermobot.xyz/#how-to-use")
+	await ctx.send("Check out the guide to managing polls here: https://thermobot.xyz/#how-to-use")
 
 # MISC COMMANDS
 @bot.command(
