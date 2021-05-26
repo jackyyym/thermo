@@ -355,7 +355,15 @@ class Poll(commands.Cog):
 			color = discord.Color.blue()
 		)
 		embed.set_footer(text=f"Requested by {ctx.author.name}")
-		await ctx.send(embed=embed)
+		results_message = await ctx.send(embed=embed)
+
+		# edit old poll
+		embed = discord.Embed(
+			title = f"{poll['name']}:",
+			description = f"Voting has concluded! See the results [here]({results_message.jump_url})"
+		)
+		await poll_message.edit(embed=embed)
+		await poll_message.clear_reactions()
 
 		db.polls.update_one(
 			{ "_id": poll_id },
@@ -571,6 +579,14 @@ class Poll(commands.Cog):
 			{ "_id": poll["_id"] },
 			{ "$set": { "vote-limit": limit } }
 		)
+
+		# update poll if posted
+		if poll["open"]:
+			poll_message = await ctx.fetch_message(poll["message"])
+			embed = poll_message.embeds[0]
+			embed.set_footer(text=f"votes per user: {limit}")
+			await poll_message.edit(embed=embed)
+			
 		await ctx.send(f"Vote limit for `{poll['name']}` set to `{limit}`!")
 
 	@setvotelimit.error
@@ -774,6 +790,7 @@ async def generatePoll(ctx, poll_id):
 	# generate main body of embed
 	desc = ''
 	used_emoji = []
+	
 	for submission in submissions:
 
 		# randomly select an unused emoji
@@ -797,11 +814,11 @@ async def generatePoll(ctx, poll_id):
 
 	poll = db.polls.find_one({ "_id": poll_id })
 	embed = discord.Embed(
-		title = poll['name'],
+		title = f"{poll['name']}:",
 		description = desc,
 		color = discord.Color.blue()
 	)
-	embed.set_footer(text=f"Requested by {ctx.author.name}")
+	embed.set_footer(text=f"votes per user: {poll['vote-limit']}")
 	await message.edit(content='', embed=embed)
 
 	# update poll document with poll message id
@@ -821,6 +838,10 @@ async def sanitizeInput(ctx, input):
 # manage per user vote limits
 @bot.event
 async def on_raw_reaction_add(payload):
+
+	# return if react is from bot
+	if payload.user_id == 845376902876626964 or payload.user_id == 843879097050726430:
+		return
 
 	# return if reaction not on a poll
 	poll = db.polls.find_one({ "message": payload.message_id, "open": True })

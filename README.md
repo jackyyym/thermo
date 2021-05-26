@@ -22,7 +22,7 @@ Customizable and robust Discord bot created to handle polls with user submission
 *Normal Use:*
 1. Create your poll with the command `+createpoll <poll name> <option 1> ... <option n>` (inputs are separated by quotes).
 	- *example:*  `+createpoll "Favorite Color" "Red" "Green" "Blue"`
-	- *optional:* set the amount of votes users can cast with `setvotelimit <vote limit>`, default is 1 vote per user.
+	- *optional:* set the amount of votes users can cast with `+setvotelimit <vote limit>`, default is 1 vote per user.
 2. Once votes are cast, use the command `+closepoll` to end voting and output the poll results.
 	- *optional:* after this step the bot will ask if you'd like to delete the poll, if you choose not to you can start another round of vote collection later with `+openpoll`.
 
