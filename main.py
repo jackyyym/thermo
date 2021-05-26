@@ -330,6 +330,7 @@ class Poll(commands.Cog):
 	)
 	@commands.check(is_manager)
 	async def closepoll(self, ctx):
+
 		# return if no polls exist
 		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": True })
 		if poll_count == 0:
@@ -345,7 +346,7 @@ class Poll(commands.Cog):
 		poll_message = await ctx.fetch_message(poll["message"])
 
 		# sort list of reactions by count
-		results = poll_message.reactions
+		results = poll_message.reactions.copy()
 		results.sort(key=lambda x: x.count, reverse=True)
 
 		# generate emoji key
@@ -358,12 +359,14 @@ class Poll(commands.Cog):
 
 		# generate main body of embed
 		desc = ''
-		used_emoji = []
 		for result in results:
 
 			# add line to embed description
 			index = key.index(result.emoji)
-			desc += f"{result.emoji} : **{submissions[index]['text']}** - *{result.count-1} votes*\n\n"
+			if result.count-1 == 1:
+				desc += f"{result.emoji} : **{submissions[index]['text']}** - {result.count-1} vote\n\n"
+			else:
+				desc += f"{result.emoji} : **{submissions[index]['text']}** - {result.count-1} votes\n\n"
 
 		embed = discord.Embed(
 			title = f"{poll['name']} results:",
