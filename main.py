@@ -16,7 +16,7 @@ bot.help_command = commands.MinimalHelpCommand(no_category="Misc", verify_checks
 # load collections
 with open("mongo_url", "r") as mongo_url:
 	cluster = pymongo.MongoClient(mongo_url, tlsCAFile=certifi.where())
-db = cluster["botTesting"]
+db = cluster["botData"]
 
 @bot.event
 async def on_ready():
@@ -878,5 +878,5 @@ async def on_raw_reaction_add(payload):
 bot.add_cog(Poll(bot))
 
 # load and run token from file
-token = open('test-token', 'r').read()
+token = open('token', 'r').read()
 bot.run(token)
