@@ -1,4 +1,3 @@
-# Thermo
 Customizable and robust Discord bot created to handle polls with user submission. Written in Python, powered by D<span>iscord.py<span> and MongoDB.
 
 [Bot Invite Link](https://discord.com/api/oauth2/authorize?client_id=843879097050726430&permissions=268511296&scope=bot)
