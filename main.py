@@ -220,9 +220,9 @@ class Poll(commands.Cog):
 
 	# creates a new poll from a list of options
 	@commands.group(
-		help = "Create a new poll from a list of quote-separated options. Use this command when you want to quickly " +
-			"create a poll where you define what all the options are ahead of time. To create a poll that " +
-			"allows for users to submit poll options, see the command `+newpoll <poll name>`.",
+		help = "Create a new poll from a list of quote-separated options. Example: `+newpoll \"Poll Name\" " +
+			"\"Option One\" \"Option Two\" \"Option Three\"`. To create a poll that " +
+			"allows for users to submit poll options, see the command `+newpoll userinput <poll name>`.",
 		brief = "Create a new poll from a list of options.",
 		invoke_without_command = True
 	)
@@ -231,6 +231,10 @@ class Poll(commands.Cog):
 
 		# return if subcommand called
 		if ctx.invoked_subcommand is not None:
+			return
+
+		if not options:
+			await ctx.send("Usage: `+newpoll \"poll name\" \"option 1\" ... \"option n\"`")
 			return
 
 		pollname = await sanitizeInput(ctx, pollname)
@@ -257,11 +261,15 @@ class Poll(commands.Cog):
 
 		await generatePoll(ctx, poll.inserted_id)
 
+	@newpoll.error
+	async def newpoll_error(self, ctx, error):
+		if isinstance(error, commands.MissingRequiredArgument):
+			await ctx.send("Usage: `+newpoll \"poll name\" \"option 1\" ... \"option n\"`")
+
 	# start new poll for user submission, giving a new title
 	@newpoll.command(
 		help = "Creates a new poll that is open to user submission. Use this command when you want " +
-			"to allow for users submit poll options. To create a poll where you define all poll options " +
-			"ahead of time, see the command `+newpoll userinput <poll name> <options>`",
+			"to allow for users submit poll options.`",
 		brief = "Create a new poll that is open to user submission.",
 		cog_name="Poll"
 	)
