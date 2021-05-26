@@ -45,16 +45,16 @@ Customizable and robust Discord bot created to handle polls with user submission
 - `submissions` - *List current poll submissions.*
 
 *Admin/Manager Commands:*
-- `createpoll <poll name> <option 1> ... <option n>` - *Create a new poll from a list of options.*
-- `newpoll <poll name>` - *Clear current submissions to begin a new poll.*
-- `openpoll` – *Open a poll to begin vote collection.*
+- `newpoll <poll name> <option 1> ... <option n>` - *Create a new poll from a list of options.*
+- `newpoll userinput <poll name>` - *Create a new poll open to user submission.*
+- `launchpoll` – *Launch a poll to begin vote collection.*
 - `closepoll` – Close poll and count votes.
 - `deletepoll` – Delete closed poll.
 - `renamepoll <poll name>` - *Rename the current poll.*
 - `setrole <role name>` - *Set the poll member role.*
 - `unsetrole` - *Unsets poll member role.*
-- `setsubmitlimit <limit>` - *Set limit on submissions per user to a single poll.*
-- `setvotelimit <limit>` - *Set limit on votes per user on a single poll.*
+- `submitlimit <limit>` - *Set limit on submissions per user to a single poll.*
+- `votelimit <limit>` - *Set limit on votes per user on a single poll.*
 - `togglemanager <member>` - *Toggle manager permissions for a user.*
 
 ### **Misc:**

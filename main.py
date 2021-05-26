@@ -16,7 +16,7 @@ bot.help_command = commands.MinimalHelpCommand(no_category="Misc", verify_checks
 # load collections
 with open("mongo_url", "r") as mongo_url:
 	cluster = pymongo.MongoClient(mongo_url, tlsCAFile=certifi.where())
-db = cluster["botData"]
+db = cluster["botTesting"]
 
 @bot.event
 async def on_ready():
@@ -218,15 +218,20 @@ class Poll(commands.Cog):
 				response += f"{poll['name']}\n"
 		await ctx.send(response)
 
-	# creates a new poll from a list of optoins
-	@commands.command(
+	# creates a new poll from a list of options
+	@commands.group(
 		help = "Create a new poll from a list of quote-separated options. Use this command when you want to quickly " +
 			"create a poll where you define what all the options are ahead of time. To create a poll that " +
 			"allows for users to submit poll options, see the command `+newpoll <poll name>`.",
-		brief = "Create a new poll from a list of options."
+		brief = "Create a new poll from a list of options.",
+		invoke_without_command = True
 	)
 	@commands.check(is_manager)
-	async def createpoll(self, ctx, pollname, *options):
+	async def newpoll(self, ctx, pollname, *options):
+
+		# return if subcommand called
+		if ctx.invoked_subcommand is not None:
+			return
 
 		pollname = await sanitizeInput(ctx, pollname)
 		if pollname == None:
@@ -253,14 +258,15 @@ class Poll(commands.Cog):
 		await generatePoll(ctx, poll.inserted_id)
 
 	# start new poll for user submission, giving a new title
-	@commands.command(
+	@newpoll.command(
 		help = "Creates a new poll that is open to user submission. Use this command when you want " +
 			"to allow for users submit poll options. To create a poll where you define all poll options " +
-			"ahead of time, see the command `+createpoll <poll name> <options>`",
-		brief = "Create a new poll that is open to user submission."
+			"ahead of time, see the command `+newpoll userinput <poll name> <options>`",
+		brief = "Create a new poll that is open to user submission.",
+		cog_name="Poll"
 	)
 	@commands.check(is_manager)
-	async def newpoll(self, ctx, *, pollname):
+	async def userinput(self, ctx, *, pollname):
 
 		pollname = await sanitizeInput(ctx, pollname)
 		if pollname == None:
@@ -277,10 +283,10 @@ class Poll(commands.Cog):
 		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! " +
 			f"Submission limit is `{config['submission-limit']}`, vote limit is `{config['vote-limit']}`.")
 	
-	@newpoll.error
-	async def newpoll_error(self, ctx, error):
+	@userinput.error
+	async def userinput_error(self, ctx, error):
 		if isinstance(error, commands.MissingRequiredArgument):
-			await ctx.send("Usage: `+newpoll <poll name>`")
+			await ctx.send("Usage: `+newpoll userinput <poll name>`")
 
 	# generates a poll from user submissions
 	@commands.command(
@@ -288,7 +294,7 @@ class Poll(commands.Cog):
 		brief = "Open a poll to begin vote collection."
 	)
 	@commands.check(is_manager)
-	async def openpoll(self, ctx):
+	async def launchpoll(self, ctx):
 
 		# return if no polls exist
 		# TODO: only open if the poll is not already open
@@ -512,7 +518,7 @@ class Poll(commands.Cog):
 		brief = "Set limit on submissions per user."
 	)
 	@commands.check(is_manager)
-	async def setsubmitlimit(self, ctx, limit):
+	async def submitlimit(self, ctx, limit):
 
 		if not limit.isnumeric():
 			await ctx.send("Submission limit needs to be a number!")
@@ -541,8 +547,8 @@ class Poll(commands.Cog):
 		)
 		await ctx.send(f"Submission limit for `{poll['name']}` set to `{limit}`!")
 
-	@setsubmitlimit.error
-	async def setsubmitlimit_error(self, ctx, error):
+	@submitlimit.error
+	async def submitlimit_error(self, ctx, error):
 		if isinstance(error, commands.MissingRequiredArgument):
 			await ctx.send("Usage: `+setsubmitlimit <submission limit>`")
 	
@@ -552,7 +558,7 @@ class Poll(commands.Cog):
 		brief = "Set limit on votes per user."
 	)
 	@commands.check(is_manager)
-	async def setvotelimit(self, ctx, limit):
+	async def votelimit(self, ctx, limit):
 
 		if not limit.isnumeric():
 			await ctx.send("Vote limit needs to be a number!")
@@ -589,8 +595,8 @@ class Poll(commands.Cog):
 			
 		await ctx.send(f"Vote limit for `{poll['name']}` set to `{limit}`!")
 
-	@setvotelimit.error
-	async def setvotelimit_error(self, ctx, error):
+	@votelimit.error
+	async def votelimit_error(self, ctx, error):
 		if isinstance(error, commands.MissingRequiredArgument):
 			await ctx.send("Usage: `+setvotelimit <vote limit>`")
 
@@ -862,7 +868,7 @@ async def on_raw_reaction_add(payload):
 			f"The current maximum is `{poll['vote-limit']}` votes.")
 
 		# print error message if without proper permissions to remove reaction
-		if not message.channel.server.me.guild_permissions.manage_messages:
+		if not message.channel.guild.me.guild_permissions.manage_messages:
 			await message.channel.send("`Error! I need the Manage Messages permission to remove votes beyond the user vote limit.`")
 		else:
 			reaction = discord.utils.get(message.reactions, emoji=payload.emoji)
@@ -872,5 +878,5 @@ async def on_raw_reaction_add(payload):
 bot.add_cog(Poll(bot))
 
 # load and run token from file
-token = open('token', 'r').read()
+token = open('test-token', 'r').read()
 bot.run(token)
