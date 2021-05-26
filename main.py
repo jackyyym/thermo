@@ -222,7 +222,7 @@ class Poll(commands.Cog):
 	@commands.group(
 		help = "Create a new poll from a list of quote-separated options. Example: `+newpoll \"Poll Name\" " +
 			"\"Option One\" \"Option Two\" \"Option Three\"`. To create a poll that " +
-			"allows for users to submit poll options, see the command `+newpoll userinput <poll name>`.",
+			"allows for users to submit poll options, see the command `+newpoll groupinput <poll name>`.",
 		brief = "Create a new poll from a list of options.",
 		invoke_without_command = True
 	)
@@ -253,6 +253,7 @@ class Poll(commands.Cog):
 			"name": pollname,
 			"submission-limit": 0,
 			"vote-limit": config["vote-limit"],
+			"groupinput": False,
 			"open": False 
 		})
 
@@ -274,7 +275,7 @@ class Poll(commands.Cog):
 		cog_name="Poll"
 	)
 	@commands.check(is_manager)
-	async def userinput(self, ctx, *, pollname):
+	async def groupinput(self, ctx, *, pollname):
 
 		pollname = await sanitizeInput(ctx, pollname)
 		if pollname == None:
@@ -286,15 +287,16 @@ class Poll(commands.Cog):
 			"name": pollname,
 			"submission-limit": config["submission-limit"],
 			"vote-limit": config["vote-limit"],
+			"groupinput": True,
 			"open": False 
 		})
 		await ctx.send(f"Ready to receive submissions for the poll `{pollname}`! " +
 			f"Submission limit is `{config['submission-limit']}`, vote limit is `{config['vote-limit']}`.")
 	
-	@userinput.error
-	async def userinput_error(self, ctx, error):
+	@groupinput.error
+	async def groupinput_error(self, ctx, error):
 		if isinstance(error, commands.MissingRequiredArgument):
-			await ctx.send("Usage: `+newpoll userinput <poll name>`")
+			await ctx.send("Usage: `+newpoll groupinput <poll name>`")
 
 	# generates a poll from user submissions
 	@commands.command(
@@ -379,11 +381,19 @@ class Poll(commands.Cog):
 		await poll_message.edit(embed=embed)
 		await poll_message.clear_reactions()
 
-		db.polls.update_one(
-			{ "_id": poll_id },
-			{ "$set": { "open": False }, "$unset": { "message": "" } }
-		)
+		# delete the poll automatically if it was created via arguments
+		if poll["groupinput"] is False:
+			# delete poll submissions
+			db.submissions.delete_many({ "poll": poll_id })
 
+			# delete poll
+			pollname = db.polls.find_one({ "_id": poll_id })["name"]
+			db.polls.delete_one({ "_id": poll_id })
+		else:
+			db.polls.update_one(
+				{ "_id": poll_id },
+				{ "$set": { "open": False }, "$unset": { "message": "" } }
+			)
 
 	# delete closed poll
 	@commands.command(

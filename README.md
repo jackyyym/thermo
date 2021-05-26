@@ -22,18 +22,17 @@ Customizable and robust Discord bot created to handle polls with user submission
 1. Create your poll with the command `+newpoll <poll name> <option 1> ... <option n>` (inputs are separated by quotes).
 	- *example:*  `+createpoll "Favorite Color" "Red" "Green" "Blue"`
 	- *optional:* set the amount of votes users can cast with `+setvotelimit <vote limit>`, default is 1 vote per user.
-2. Once votes are cast, use the command `+closepoll` to end voting and output the poll results.
-	- *optional:* after this step the bot will ask if you'd like to delete the poll, if you choose not to you can start another round of vote collection later with `+openpoll`.
+2. Once votes are cast, use the command `+closepoll` to end voting and output the poll results.<br><br>
 
 *With User Submission:*
-1. Create and name your poll with `+newpoll userinput <poll name>`.
+1. Create and name your poll with `+newpoll groupinput <poll name>`.
 	- optional: use `+setsubmitlimit <limit>` and/or `+setvotelimit <limit>` to control how
 	many times users can submit to and vote on the created poll.
 2. Users can now submit poll options with `+submit <submission>`.
 3. Once submissions are received, generate and open the poll to voting with `+openpoll`
 4. Once all votes are cast, use `+closepoll` to end voting and output the poll results.
 5. Now use `+deletepoll` to delete the closed poll.
-	- *optional:* after this step the bot will ask if you'd like to delete the poll, if you choose not to you can start another round of vote collection later with `+openpoll`
+	- *optional:* rather than delete the poll, you can instead continue submissions of poll options and/or do another round of vote collecting later.
 <br><br>
 
 # Commands:
@@ -45,7 +44,7 @@ Customizable and robust Discord bot created to handle polls with user submission
 
 *Admin/Manager Commands:*
 - `newpoll <poll name> <option 1> ... <option n>` - *Create a new poll from a list of options.*
-- `newpoll userinput <poll name>` - *Create a new poll open to user submission.*
+- `newpoll groupinput <poll name>` - *Create a new poll open to user submission.*
 - `launchpoll` – *Launch a poll to begin vote collection.*
 - `closepoll` – Close poll and count votes.
 - `deletepoll` – Delete closed poll.
