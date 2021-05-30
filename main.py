@@ -98,13 +98,13 @@ class Poll(commands.Cog):
 
 		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
 		if submission_count >= poll["submission-limit"]:
-			await ctx.send("You're already at your maximum submissions for this poll!. Use `unsubmit` to remove one first.")
+			await ctx.send("You're already at your maximum submissions for this poll!. Use `+unsubmit` to remove one first.")
 			return
 
 		# add submission
 		db.submissions.insert_one({ "poll": poll["_id"], "user": ctx.author.id, "text": submission })
 
-		await ctx.send(f"Submitted to poll `{poll['name']}`! Use `submissions` to see a list of submissions.")
+		await ctx.send(f"Submitted to poll `{poll['name']}`! Use `+submissions` to see a list of submissions.")
 
 	@submit.error
 	async def submit_error(self, ctx, error):
@@ -137,7 +137,7 @@ class Poll(commands.Cog):
 		# ensure user has a submission
 		submission_count = db.submissions.count_documents({ "poll": poll["_id"], "user": ctx.author.id })
 		if submission_count == 0:
-			await ctx.send("No submissions yet! Use 'submit` to place a submission.")
+			await ctx.send("No submissions yet! Use `+submit <submission>` to place a submission.")
 			return
 		elif submission_count == 1:
 			# remove submission
@@ -409,7 +409,7 @@ class Poll(commands.Cog):
 		# return if no polls exist
 		poll_count = db.polls.count_documents({ "guild": ctx.guild.id, "open": False })
 		if poll_count == 0:
-			await ctx.send("No polls to delete! Polls must not be collecting votes to be deleted, use `closepoll` to close a vote.")
+			await ctx.send("No polls to delete! Polls must not be collecting votes to be deleted, use `+closepoll` to close a vote.")
 			return
 
 		# prompt user to choose a closed poll
@@ -809,7 +809,7 @@ async def generatePoll(ctx, poll_id):
 	# check if submissions exist
 	submissions = db.submissions.find({ "poll": poll_id }).sort("text")
 	if submissions == None:
-		await ctx.send("No submissions yet! Use `submit` to place a submission.")
+		await ctx.send("No submissions yet! Use `+submit <submission>` to place a submission.")
 		return
 
 	message = await ctx.send('`generating poll`')
