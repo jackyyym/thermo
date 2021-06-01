@@ -343,7 +343,7 @@ class Poll(commands.Cog):
 
 		# acquire poll message
 		poll = db.polls.find_one({ "_id": poll_id })
-		poll_message = await ctx.fetch_message(poll["message"])
+		poll_message = await getMessage(ctx, poll["message"])
 
 		# sort list of reactions by count
 		results = poll_message.reactions.copy()
@@ -609,11 +609,12 @@ class Poll(commands.Cog):
 
 		# update poll if posted
 		if poll["open"]:
-			poll_message = await ctx.fetch_message(poll["message"])
-			embed = poll_message.embeds[0]
-			embed.set_footer(text=f"votes per user: {limit}")
-			await poll_message.edit(embed=embed)
-			
+			poll_message = await getMessage(ctx, poll["message"])
+			if poll_message is not None:
+				embed = poll_message.embeds[0]
+				embed.set_footer(text=f"votes per user: {limit}")
+				await poll_message.edit(embed=embed)
+
 		await ctx.send(f"Vote limit for `{poll['name']}` set to `{limit}`!")
 
 	@votelimit.error
@@ -634,7 +635,7 @@ class Poll(commands.Cog):
 
 		# currently not a manager
 		if member.id not in config["managers"]:
-			db.guilds.update_one(
+			db.guilds.update_one(	
 				{ "_id": ctx.guild.id },
 				{ "$push": { "managers": member.id} }
 			)
@@ -861,6 +862,15 @@ async def sanitizeInput(ctx, input):
 		return None
 	chunks = input.split('\n')
 	return chunks[0]
+
+async def getMessage(ctx, id):
+	message = None
+	for channel in ctx.guild.text_channels:
+		try:
+			message = await channel.fetch_message(id)
+		except:
+			continue 
+		return message
 
 # manage per user vote limits
 @bot.event
